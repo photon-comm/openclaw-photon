@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.tag.outputs.sha }}
+      dist-tag: ${{ steps.tag.outputs.dist-tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,6 +50,11 @@ jobs:
             exit 1
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # A prerelease (a version with a hyphen) is tagged next, not latest.
+          case "$TAG" in
+            *-*) echo "dist-tag=next" >> "$GITHUB_OUTPUT" ;;
+            *) echo "dist-tag=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
       # dist/ is committed and CI keeps it in step with the sources, so the
       # tarball is packed as the tag has it, the same files npm ships.
       - name: Pack
@@ -74,4 +80,5 @@ jobs:
       source_repo: ${{ github.repository }}
       source_commit: ${{ needs.pack.outputs.sha }}
       source_ref: refs/tags/${{ inputs.tag }}
+      tags: ${{ needs.pack.outputs.dist-tag }}
       dry_run: ${{ inputs.dry-run }}

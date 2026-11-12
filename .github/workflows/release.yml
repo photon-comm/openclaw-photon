@@ -60,9 +60,19 @@ jobs:
             echo "::error::dist/ at $TAG does not match its sources."
             exit 1
           fi
+      # A prerelease (a version with a hyphen, like 0.2.0-beta.1) goes to the
+      # next dist-tag, so `latest` only ever names a stable release.
+      - name: Pick the dist-tag
+        id: dist-tag
+        run: |
+          case "$TAG" in
+            *-*) echo "tag=next" >> "$GITHUB_OUTPUT" ;;
+            *) echo "tag=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
       - uses: photon-hq/buildspace/.github/blocks/publish-npm@f2b0f40bb808a721d71711a4db59d234d86736a6
         with:
           node-version: '24'
+          tag: ${{ steps.dist-tag.outputs.tag }}
           build-command: npm run build
           dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
           npm-token: ${{ secrets.NPM_TOKEN }}
