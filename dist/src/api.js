@@ -144,22 +144,6 @@ export class PhotonProjectApi {
         });
         return typeof meta.sizeBytes === "number" ? meta.sizeBytes : undefined;
     }
-    /** Tapback on a message: an emoji or a tapback name (love, like, dislike, laugh, emphasize, question). */
-    async react(conversation, messageId, reaction) {
-        await this.photon.projects.sendMessage({
-            path: { id: this.projectId },
-            // Header values are ASCII only, so the emoji stays out of the key.
-            headers: { "idempotency-key": `openclaw-react:${messageId}:${randomUUID()}` },
-            body: {
-                spaceId: conversation.spaceId,
-                senderId: conversation.agentUserId,
-                parentMessageId: messageId,
-                // The API refuses `action` on a send, though the generated type
-                // still requires it.
-                content: { type: "reaction", reaction },
-            },
-        });
-    }
     async setTyping(conversation, typing) {
         await this.photon.projects.setSpaceTyping({
             path: { id: this.projectId, spaceId: conversation.spaceId },

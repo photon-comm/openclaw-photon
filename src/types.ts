@@ -34,7 +34,10 @@ export type PhotonAccountConfig = {
   dmPolicy?: DmPolicy;
   allowFrom?: Array<string | number>;
   defaultTo?: string;
-  /** Tapback 👀 while the agent works, then 👍 or 👎 (default false). */
+  /**
+   * v0.1 status tapbacks. Photon Beta doesn't send tapbacks yet, so it is
+   * ignored; kept so a v0.1 config still loads.
+   */
   reactions?: boolean;
   markdown?: MarkdownConfig;
   historyLimit?: number;

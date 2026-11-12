@@ -11,11 +11,6 @@ import { normalizePhotonAllowEntry, normalizePhotonSenderId } from "./normalize.
 import { getPhotonRuntime } from "./runtime.js";
 import { sendMessagePhoton } from "./send.js";
 const CHANNEL_ID = "photon";
-// Processing-status tapbacks: 👀 while the agent works, then 👍/👎. iMessage
-// keeps one tapback per sender, so each one replaces the previous one.
-const REACTION_PROCESSING = "👀";
-const REACTION_DONE = "👍";
-const REACTION_ERROR = "👎";
 const photonIngressIdentity = defineStableChannelIngressIdentity({
     key: "photon-phone",
     normalizeEntry: (raw) => normalizePhotonAllowEntry(raw) || null,
@@ -49,24 +44,6 @@ async function deliverPhotonReply(params) {
         });
     }
     params.statusSink?.({ lastOutboundAt: Date.now() });
-}
-function createStatusTapback(params) {
-    const react = async (emoji) => {
-        if (!params.enabled) {
-            return;
-        }
-        try {
-            await getActivePhotonClient(params.accountId)?.react(params.handle, params.messageId, emoji);
-        }
-        catch (err) {
-            params.runtime.log?.(`photon: tapback ${emoji} failed: ${describePhotonError(err)}`);
-        }
-    };
-    return {
-        processing: () => react(REACTION_PROCESSING),
-        done: () => react(REACTION_DONE),
-        error: () => react(REACTION_ERROR),
-    };
 }
 export async function handlePhotonInbound(params) {
     const { message, account, config, runtime, statusSink } = params;
@@ -203,76 +180,59 @@ export async function handlePhotonInbound(params) {
     await client?.markRead(message.messageId).catch((err) => {
         runtime.log?.(`photon: read receipt failed: ${describePhotonError(err)}`);
     });
-    const tapback = createStatusTapback({
-        enabled: account.config.reactions === true,
+    await core.channel.inbound.dispatchReply({
+        cfg: config,
+        channel: CHANNEL_ID,
         accountId: account.accountId,
-        handle: replyTarget,
-        messageId: message.messageId,
-        runtime,
+        agentId: route.agentId,
+        routeSessionKey: route.sessionKey,
+        storePath,
+        ctxPayload,
+        recordInboundSession: core.channel.session.recordInboundSession,
+        dispatchReplyWithBufferedBlockDispatcher: core.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+        delivery: {
+            deliver: async (payload) => {
+                await deliverPhotonReply({
+                    payload,
+                    cfg: config,
+                    target: replyTarget,
+                    accountId: account.accountId,
+                    sendMessage,
+                    mediaLocalRoots,
+                    statusSink,
+                });
+            },
+            onError: (err, info) => {
+                runtime.error?.(`photon ${info.kind} reply failed: ${describePhotonError(err)}`);
+            },
+        },
+        // iMessage typing bubble while the agent works; the shared pipeline
+        // owns keepalive and teardown on final/error/abort.
+        replyPipeline: {
+            typing: {
+                start: async () => {
+                    await getActivePhotonClient(account.accountId)?.setTyping(replyTarget, true);
+                },
+                stop: async () => {
+                    await getActivePhotonClient(account.accountId)?.setTyping(replyTarget, false);
+                },
+                onStartError: (err) => {
+                    runtime.log?.(`photon: typing start failed: ${String(err)}`);
+                },
+                onStopError: (err) => {
+                    runtime.log?.(`photon: typing stop failed: ${String(err)}`);
+                },
+            },
+        },
+        replyOptions: {
+            disableBlockStreaming: typeof account.config.blockStreaming === "boolean"
+                ? !account.config.blockStreaming
+                : undefined,
+        },
+        record: {
+            onRecordError: (err) => {
+                runtime.error?.(`photon: failed updating session meta: ${String(err)}`);
+            },
+        },
     });
-    await tapback.processing();
-    let deliveryFailed = false;
-    try {
-        await core.channel.inbound.dispatchReply({
-            cfg: config,
-            channel: CHANNEL_ID,
-            accountId: account.accountId,
-            agentId: route.agentId,
-            routeSessionKey: route.sessionKey,
-            storePath,
-            ctxPayload,
-            recordInboundSession: core.channel.session.recordInboundSession,
-            dispatchReplyWithBufferedBlockDispatcher: core.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
-            delivery: {
-                deliver: async (payload) => {
-                    await deliverPhotonReply({
-                        payload,
-                        cfg: config,
-                        target: replyTarget,
-                        accountId: account.accountId,
-                        sendMessage,
-                        mediaLocalRoots,
-                        statusSink,
-                    });
-                },
-                onError: (err, info) => {
-                    deliveryFailed = true;
-                    runtime.error?.(`photon ${info.kind} reply failed: ${String(err)}`);
-                },
-            },
-            // iMessage typing bubble while the agent works; the shared pipeline
-            // owns keepalive and teardown on final/error/abort.
-            replyPipeline: {
-                typing: {
-                    start: async () => {
-                        await getActivePhotonClient(account.accountId)?.setTyping(replyTarget, true);
-                    },
-                    stop: async () => {
-                        await getActivePhotonClient(account.accountId)?.setTyping(replyTarget, false);
-                    },
-                    onStartError: (err) => {
-                        runtime.log?.(`photon: typing start failed: ${String(err)}`);
-                    },
-                    onStopError: (err) => {
-                        runtime.log?.(`photon: typing stop failed: ${String(err)}`);
-                    },
-                },
-            },
-            replyOptions: {
-                disableBlockStreaming: typeof account.config.blockStreaming === "boolean"
-                    ? !account.config.blockStreaming
-                    : undefined,
-            },
-            record: {
-                onRecordError: (err) => {
-                    runtime.error?.(`photon: failed updating session meta: ${String(err)}`);
-                },
-            },
-        });
-    }
-    catch (err) {
-        await tapback.error();
-        throw err;
-    }
-    await (deliveryFailed ? tapback.error() : tapback.done());
 }

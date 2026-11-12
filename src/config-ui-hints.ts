@@ -29,7 +29,7 @@ export const photonChannelConfigUiHints = {
     help: "Phone numbers in E.164 format (for example +15551234567) or iMessage emails that can message the agent.",
   },
   reactions: {
-    label: "Tapback status",
-    help: "Tapback 👀 while the agent works and 👍 or 👎 when it finishes. Off by default.",
+    label: "Tapback status (v0.1 only)",
+    help: "Ignored since v0.2: Photon Beta doesn't send tapbacks yet (v0.1 on Stable did).",
   },
 } satisfies Record<string, ChannelConfigUiHint>;

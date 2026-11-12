@@ -126,7 +126,7 @@ export const photonPlugin: ChannelPlugin<ResolvedPhotonAccount, PhotonProbe> =
         chatTypes: ["direct"],
         media: true,
         blockStreaming: true,
-        reactions: true,
+        reactions: false,
       },
       reload: { configPrefixes: ["channels.photon"] },
       configSchema: PhotonChannelConfigSchema,
@@ -140,6 +140,10 @@ export const photonPlugin: ChannelPlugin<ResolvedPhotonAccount, PhotonProbe> =
           typeof env?.PHOTON_API_KEY === "string" &&
           env.PHOTON_API_KEY.trim().length > 0,
         isConfigured: (account) => account.configured,
+        unconfiguredReason: (account) =>
+          account.legacyStableConfig
+            ? "has a v0.1 Stable (Spectrum) project secret, and this version runs on Photon Beta: run `openclaw configure --section channels` to sign in again, or install v0.1.1 to stay on Stable"
+            : "needs projectId and apiKey (run `openclaw configure --section channels`)",
         describeAccount: (account) =>
           describeAccountSnapshot({
             account,

@@ -84,10 +84,6 @@ export class PhotonClient {
         const conversation = await this.conversationFor(handle);
         await this.api.setTyping(conversation, typing);
     }
-    async react(handle, messageId, reaction) {
-        const conversation = await this.conversationFor(handle);
-        await this.api.react(conversation, messageId, reaction);
-    }
     async markRead(messageId) {
         await this.api.markRead(messageId);
     }
