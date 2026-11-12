@@ -22,17 +22,19 @@ export type PhotonAccountConfig = {
   name?: string;
   enabled?: boolean;
   defaultAccount?: string;
-  /** Spectrum project id (the project's `spectrumProjectId`). */
+  /** Photon Beta project id (`pho_prj_...`). */
   projectId?: string;
-  /** Project secret paired with the Spectrum project id. */
+  /** Project API key (`pho_sk_...`) with project:read, project:write and platforms:read. */
+  apiKey?: SecretInput;
+  /**
+   * Stable (Spectrum) project secret from v0.1. Not used since v0.2, which
+   * runs on Photon Beta; kept so an old config still loads and can say so.
+   */
   projectSecret?: SecretInput;
   dmPolicy?: DmPolicy;
   allowFrom?: Array<string | number>;
   defaultTo?: string;
-  /**
-   * Tapback 👀/👍/👎 as processing status and route tapbacks on agent
-   * messages to the agent (default false; tapbacks are real iMessages).
-   */
+  /** Tapback 👀 while the agent works, then 👍 or 👎 (default false). */
   reactions?: boolean;
   markdown?: MarkdownConfig;
   historyLimit?: number;
@@ -58,7 +60,9 @@ export type ResolvedPhotonAccount = {
   enabled: boolean;
   configured: boolean;
   projectId: string;
-  projectSecret: string;
+  apiKey: string;
+  /** A v0.1 (Stable) config: a project secret and no API key. */
+  legacyStableConfig: boolean;
   config: PhotonAccountConfig;
 };
 
@@ -69,26 +73,12 @@ export type PhotonInboundMedia = {
 
 export type PhotonInboundMessage = {
   messageId: string;
-  /** Spectrum DM space id (DM chat guid). */
-  spaceId: string;
-  /** Peer phone number (E.164) when known. */
-  spacePhone?: string;
-  /** Sender handle (E.164 phone or platform handle). */
+  /** Sender handle: E.164 phone or iMessage email. Replies go back to it. */
   senderId: string;
   text: string;
   media: PhotonInboundMedia[];
   /** Text markers for media that could not be staged (oversize/read failure). */
   mediaPlaceholders: string[];
-  timestamp: number;
-};
-
-export type PhotonInboundReaction = {
-  messageId: string;
-  spaceId: string;
-  spacePhone?: string;
-  senderId: string;
-  emoji: string;
-  targetMessageId?: string;
   timestamp: number;
 };
 
@@ -106,15 +96,15 @@ function resolveEnvProjectId(accountId: string): string {
   return accountId === DEFAULT_ACCOUNT_ID ? (process.env.PHOTON_PROJECT_ID?.trim() ?? "") : "";
 }
 
-function resolveEnvProjectSecret(accountId: string): string {
-  return accountId === DEFAULT_ACCOUNT_ID ? (process.env.PHOTON_PROJECT_SECRET?.trim() ?? "") : "";
+function resolveEnvApiKey(accountId: string): string {
+  return accountId === DEFAULT_ACCOUNT_ID ? (process.env.PHOTON_API_KEY?.trim() ?? "") : "";
 }
 
 /** List all configured Photon account ids. */
 export function listPhotonAccountIds(cfg: OpenClawConfig): string[] {
   const photonCfg = getPhotonConfig(cfg);
   const configProjectId = photonCfg?.projectId?.trim();
-  const configSecret = normalizeSecretInputString(photonCfg?.projectSecret);
+  const configSecret = normalizeSecretInputString(photonCfg?.apiKey);
   const projectId = configProjectId || process.env.PHOTON_PROJECT_ID?.trim();
   // Environment credentials only resolve for the default account, so an
   // account that leans on them must be listed under that id.
@@ -147,16 +137,16 @@ export function resolvePhotonAccount(opts: {
 
   const enabled = photonCfg?.enabled !== false;
   const projectId = photonCfg?.projectId?.trim() || resolveEnvProjectId(accountId);
-  const projectSecret =
-    normalizeSecretInputString(photonCfg?.projectSecret) || resolveEnvProjectSecret(accountId);
+  const apiKey = normalizeSecretInputString(photonCfg?.apiKey) || resolveEnvApiKey(accountId);
 
   return {
     accountId,
     name: normalizeOptionalString(photonCfg?.name),
     enabled,
-    configured: Boolean(projectId && projectSecret),
+    configured: Boolean(projectId && apiKey),
     projectId,
-    projectSecret,
+    apiKey,
+    legacyStableConfig: !apiKey && photonCfg?.projectSecret !== undefined,
     config: photonCfg ?? {},
   };
 }

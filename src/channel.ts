@@ -40,11 +40,12 @@ const meta = {
   docsPath: "https://github.com/photon-hq/openclaw-photon#readme",
   docsLabel: "photon",
   blurb:
-    "iMessage through Photon Spectrum. Sign in with Photon and get a line to text, no Mac or public URL needed.",
+    "iMessage through Photon. Sign in with Photon and get a line to text, no Mac or public URL needed.",
   order: 57,
   detailLabel: "Photon iMessage",
   systemImage: "message",
-  markdownCapable: true,
+  // Photon sends iMessage text as plain text; send.ts flattens Markdown.
+  markdownCapable: false,
 };
 
 const photonConfigAdapter = createTopLevelChannelConfigAdapter<ResolvedPhotonAccount>({
@@ -57,6 +58,7 @@ const photonConfigAdapter = createTopLevelChannelConfigAdapter<ResolvedPhotonAcc
     "name",
     "defaultAccount",
     "projectId",
+    "apiKey",
     "projectSecret",
     "dmPolicy",
     "allowFrom",
@@ -97,12 +99,15 @@ const photonMessageAdapter = defineChannelMessageAdapter({
         accountId: accountId ?? undefined,
       });
     },
-    media: async ({ cfg, to, text, mediaUrl, accountId }) => {
+    media: async ({ cfg, to, text, mediaUrl, accountId, mediaAccess, mediaLocalRoots, mediaReadFile }) => {
       const { sendMessagePhoton } = await loadPhotonChannelRuntime();
       return await sendMessagePhoton(to, text, {
         cfg: cfg as CoreConfig,
         accountId: accountId ?? undefined,
         mediaUrl: mediaUrl ?? undefined,
+        mediaAccess,
+        mediaLocalRoots,
+        mediaReadFile,
       });
     },
   },
@@ -117,7 +122,7 @@ export const photonPlugin: ChannelPlugin<ResolvedPhotonAccount, PhotonProbe> =
         quickstartAllowFrom: true,
       },
       capabilities: {
-        // Photon does not support group chats; iMessage DMs only.
+        // Direct messages only; the plugin ignores group chats.
         chatTypes: ["direct"],
         media: true,
         blockStreaming: true,
@@ -132,8 +137,8 @@ export const photonPlugin: ChannelPlugin<ResolvedPhotonAccount, PhotonProbe> =
         hasConfiguredState: ({ env }) =>
           typeof env?.PHOTON_PROJECT_ID === "string" &&
           env.PHOTON_PROJECT_ID.trim().length > 0 &&
-          typeof env?.PHOTON_PROJECT_SECRET === "string" &&
-          env.PHOTON_PROJECT_SECRET.trim().length > 0,
+          typeof env?.PHOTON_API_KEY === "string" &&
+          env.PHOTON_API_KEY.trim().length > 0,
         isConfigured: (account) => account.configured,
         describeAccount: (account) =>
           describeAccountSnapshot({
@@ -149,7 +154,7 @@ export const photonPlugin: ChannelPlugin<ResolvedPhotonAccount, PhotonProbe> =
         normalizeTarget: normalizePhotonMessagingTarget,
         targetResolver: {
           looksLikeId: looksLikePhotonTargetId,
-          hint: "<+E.164 phone>",
+          hint: "<+E.164 phone or iMessage email>",
         },
       },
       message: photonMessageAdapter,
@@ -225,12 +230,15 @@ export const photonPlugin: ChannelPlugin<ResolvedPhotonAccount, PhotonProbe> =
             accountId: accountId ?? undefined,
           });
         },
-        sendMedia: async ({ cfg, to, text, mediaUrl, accountId }) => {
+        sendMedia: async ({ cfg, to, text, mediaUrl, accountId, mediaAccess, mediaLocalRoots, mediaReadFile }) => {
           const { sendMessagePhoton } = await loadPhotonChannelRuntime();
           return await sendMessagePhoton(to, text, {
             cfg: cfg as CoreConfig,
             accountId: accountId ?? undefined,
             mediaUrl: mediaUrl ?? undefined,
+            mediaAccess,
+            mediaLocalRoots,
+            mediaReadFile,
           });
         },
       },

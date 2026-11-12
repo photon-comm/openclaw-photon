@@ -1,8 +1,8 @@
-// Gateway lifecycle for one Photon account: open the Spectrum stream and keep
-// it running until OpenClaw aborts the account task.
+// Gateway lifecycle for one Photon account: open the Photon event stream and
+// keep it running until OpenClaw aborts the account task.
 import { createAccountStatusSink, runPassiveAccountLifecycle } from "openclaw/plugin-sdk/channel-outbound";
 let photonChannelRuntimePromise;
-/** Load the Spectrum-backed runtime lazily so cold plugin loads stay light. */
+/** Load the API client and Socket.IO runtime lazily so cold plugin loads stay light. */
 export async function loadPhotonChannelRuntime() {
     photonChannelRuntimePromise ??= import("./channel-runtime.js");
     return await photonChannelRuntimePromise;
@@ -14,7 +14,10 @@ export async function startPhotonGatewayAccount(ctx) {
         setStatus: ctx.setStatus,
     });
     if (!account.configured) {
-        throw new Error(`Photon is not configured for account "${account.accountId}" (set channels.photon.projectId and projectSecret, or run: openclaw channels add --channel photon).`);
+        if (account.legacyStableConfig) {
+            throw new Error(`Photon account "${account.accountId}" has a Stable (Spectrum) project secret, which this version doesn't use: it runs on Photon Beta. Run \`openclaw configure --section channels\` to sign in again, or install v0.1.1 to stay on Stable.`);
+        }
+        throw new Error(`Photon is not configured for account "${account.accountId}" (set channels.photon.projectId and apiKey, or run: openclaw configure --section channels).`);
     }
     ctx.log?.info?.(`[${account.accountId}] starting Photon provider (project ${account.projectId})`);
     const { monitorPhotonProvider } = await loadPhotonChannelRuntime();

@@ -6,7 +6,7 @@ describe("photon config schema", () => {
   it("accepts a minimal valid config", () => {
     const parsed = PhotonConfigSchema.safeParse({
       projectId: "proj-123",
-      projectSecret: "secret",
+      apiKey: "pho_sk_test",
       allowFrom: ["+15551234567"],
     });
     expect(parsed.success).toBe(true);
@@ -24,14 +24,14 @@ describe("photon config schema", () => {
   it('requires allowFrom "*" for open dmPolicy', () => {
     const rejected = PhotonConfigSchema.safeParse({
       projectId: "p",
-      projectSecret: "s",
+      apiKey: "k",
       dmPolicy: "open",
     });
     expect(rejected.success).toBe(false);
 
     const accepted = PhotonConfigSchema.safeParse({
       projectId: "p",
-      projectSecret: "s",
+      apiKey: "k",
       dmPolicy: "open",
       allowFrom: ["*"],
     });
@@ -41,7 +41,7 @@ describe("photon config schema", () => {
   it("rejects group config (Photon does not support group chats)", () => {
     const parsed = PhotonConfigSchema.safeParse({
       projectId: "p",
-      projectSecret: "s",
+      apiKey: "k",
       groups: { "*": { requireMention: true } },
     });
     expect(parsed.success).toBe(false);
@@ -50,10 +50,15 @@ describe("photon config schema", () => {
   it("accepts reactions and defaultTo", () => {
     const parsed = PhotonConfigSchema.safeParse({
       projectId: "p",
-      projectSecret: "s",
+      apiKey: "k",
       reactions: true,
       defaultTo: "+15551234567",
     });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still loads a v0.1 config with a project secret", () => {
+    const parsed = PhotonConfigSchema.safeParse({ projectId: "p", projectSecret: "old" });
     expect(parsed.success).toBe(true);
   });
 });

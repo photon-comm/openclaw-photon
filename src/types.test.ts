@@ -7,7 +7,7 @@ import {
   type CoreConfig,
 } from "./types.js";
 
-const ENV_KEYS = ["PHOTON_PROJECT_ID", "PHOTON_PROJECT_SECRET"] as const;
+const ENV_KEYS = ["PHOTON_PROJECT_ID", "PHOTON_API_KEY"] as const;
 const savedEnv = new Map<string, string | undefined>(
   ENV_KEYS.map((key) => [key, process.env[key]]),
 );
@@ -25,12 +25,12 @@ afterEach(() => {
 describe("photon account resolution", () => {
   it("resolves a configured account from config", () => {
     delete process.env.PHOTON_PROJECT_ID;
-    delete process.env.PHOTON_PROJECT_SECRET;
+    delete process.env.PHOTON_API_KEY;
     const cfg = {
       channels: {
         photon: {
           projectId: "proj-123",
-          projectSecret: "secret-abc",
+          apiKey: "pho_sk_abc",
         },
       },
     } as CoreConfig;
@@ -39,24 +39,25 @@ describe("photon account resolution", () => {
     expect(account.accountId).toBe("default");
     expect(account.configured).toBe(true);
     expect(account.projectId).toBe("proj-123");
-    expect(account.projectSecret).toBe("secret-abc");
+    expect(account.apiKey).toBe("pho_sk_abc");
+    expect(account.legacyStableConfig).toBe(false);
     expect(listPhotonAccountIds(cfg)).toEqual(["default"]);
     expect(resolveDefaultPhotonAccountId(cfg)).toBe("default");
   });
 
   it("falls back to env credentials for the default account", () => {
     process.env.PHOTON_PROJECT_ID = "env-proj";
-    process.env.PHOTON_PROJECT_SECRET = "env-secret";
+    process.env.PHOTON_API_KEY = "env-key";
 
     const account = resolvePhotonAccount({ cfg: {} as CoreConfig });
     expect(account.configured).toBe(true);
     expect(account.projectId).toBe("env-proj");
-    expect(account.projectSecret).toBe("env-secret");
+    expect(account.apiKey).toBe("env-key");
   });
 
   it("reports unconfigured when credentials are missing", () => {
     delete process.env.PHOTON_PROJECT_ID;
-    delete process.env.PHOTON_PROJECT_SECRET;
+    delete process.env.PHOTON_API_KEY;
 
     const account = resolvePhotonAccount({
       cfg: { channels: { photon: { projectId: "only-id" } } } as CoreConfig,
@@ -69,7 +70,7 @@ describe("photon account resolution", () => {
     const account = resolvePhotonAccount({
       cfg: {
         channels: {
-          photon: { enabled: false, projectId: "p", projectSecret: "s" },
+          photon: { enabled: false, projectId: "p", apiKey: "k" },
         },
       } as CoreConfig,
     });
@@ -79,11 +80,21 @@ describe("photon account resolution", () => {
 
   it("lists env-backed credentials under the default account id", () => {
     process.env.PHOTON_PROJECT_ID = "proj-env";
-    process.env.PHOTON_PROJECT_SECRET = "secret-env";
+    process.env.PHOTON_API_KEY = "key-env";
     const cfg = { channels: { photon: { defaultAccount: "work" } } } as CoreConfig;
 
     expect(listPhotonAccountIds(cfg)).toEqual(["default"]);
     const account = resolvePhotonAccount({ cfg, accountId: listPhotonAccountIds(cfg)[0] });
     expect(account.configured).toBe(true);
+  });
+
+  it("flags a v0.1 Stable config (project secret, no API key)", () => {
+    delete process.env.PHOTON_PROJECT_ID;
+    delete process.env.PHOTON_API_KEY;
+    const account = resolvePhotonAccount({
+      cfg: { channels: { photon: { projectId: "spectrum-id", projectSecret: "old" } } } as CoreConfig,
+    });
+    expect(account.configured).toBe(false);
+    expect(account.legacyStableConfig).toBe(true);
   });
 });

@@ -1,47 +1,40 @@
-// Photon plugin module implements monitor behavior.
+// Gateway side of one Photon account: subscribe to the project's events,
+// turn each inbound iMessage into an agent turn, and keep the cursor so a
+// restart picks up where it stopped.
 import { resolveLoggerBackedRuntime } from "openclaw/plugin-sdk/extension-shared";
 import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
-import { clearActivePhotonClient, normalizePhotonContent, PhotonClient, readPhotonReactionContent, setActivePhotonClient, } from "./client.js";
-import { handlePhotonInbound, handlePhotonReaction } from "./inbound.js";
-import { phoneTargetFromSpaceId } from "./normalize.js";
+import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
+import { describePhotonError, photonApiOrigin } from "./api.js";
+import { clearActivePhotonClient, PhotonClient, setActivePhotonClient } from "./client.js";
+import { subscribePhotonEvents } from "./events.js";
+import { handlePhotonInbound } from "./inbound.js";
+import { parsePhotonInbound } from "./message.js";
 import { getPhotonRuntime } from "./runtime.js";
+import { CursorTracker, photonStateFile } from "./state.js";
 import { resolvePhotonAccount } from "./types.js";
-const DEFAULT_MEDIA_MAX_MB = 20;
-// Spectrum gRPC reconnects can replay recent messages; a bounded seen-id set
-// keeps a catch-up burst from dispatching duplicate agent turns.
-const MAX_SEEN_MESSAGE_IDS = 1024;
-const RESUBSCRIBE_BACKOFF_MAX_MS = 30_000;
-function rememberSeenMessageId(seen, id) {
-    if (seen.has(id)) {
-        return false;
-    }
-    seen.add(id);
-    if (seen.size > MAX_SEEN_MESSAGE_IDS) {
-        const oldest = seen.values().next().value;
-        if (oldest !== undefined) {
-            seen.delete(oldest);
-        }
-    }
-    return true;
-}
-async function stagePhotonAttachments(attachments, params) {
+export const DEFAULT_MEDIA_MAX_MB = 20;
+async function stageAttachments(client, inbound, params) {
     const media = [];
     const placeholders = [];
-    for (const item of attachments) {
-        if (!item.buffer) {
-            if (item.placeholder) {
-                placeholders.push(item.placeholder);
-            }
-            continue;
-        }
+    for (const item of inbound.attachments) {
+        const label = item.kind === "voice" ? "voice note" : "attachment";
         try {
-            const saved = await saveMediaBuffer(item.buffer, item.mimeType, "inbound", params.maxBytes, item.name);
+            const size = await client.api.attachmentSize(item.attachmentId);
+            if (typeof size === "number" && size > params.maxBytes) {
+                placeholders.push(`[Photon ${label} received: too large to read (${size} bytes)]`);
+                continue;
+            }
+            const file = await client.api.downloadAttachment(item.attachmentId);
+            const saved = await saveMediaBuffer(file.buffer, file.contentType, "inbound", params.maxBytes, file.fileName);
             media.push({ path: saved.path, contentType: saved.contentType });
         }
         catch (err) {
-            params.logVerbose(`photon: failed to stage inbound media: ${String(err)}`);
-            placeholders.push(`[Photon ${item.kind === "voice" ? "voice note" : "attachment"} received: ${item.name ?? "(unnamed)"}]`);
+            params.log(`photon: could not read ${label} ${item.attachmentId}: ${describePhotonError(err)}`);
+            placeholders.push(`[Photon ${label} received: ${item.attachmentId}]`);
         }
+    }
+    for (const type of inbound.unsupported) {
+        placeholders.push(`[Photon message of type ${type} received]`);
     }
     return { media, placeholders };
 }
@@ -51,7 +44,7 @@ export async function monitorPhotonProvider(opts) {
     const account = resolvePhotonAccount({ cfg, accountId: opts.accountId });
     const runtime = resolveLoggerBackedRuntime(opts.runtime, core.logging.getChildLogger());
     if (!account.configured) {
-        throw new Error(`Photon is not configured for account "${account.accountId}" (need projectId and projectSecret in channels.photon).`);
+        throw new Error(`Photon is not configured for account "${account.accountId}" (need projectId and apiKey in channels.photon).`);
     }
     const logger = core.logging.getChildLogger({
         channel: "photon",
@@ -62,76 +55,32 @@ export async function monitorPhotonProvider(opts) {
             logger.debug?.(message);
         }
     };
-    const client = await PhotonClient.connect({
+    const client = new PhotonClient({
+        accountId: account.accountId,
         projectId: account.projectId,
-        projectSecret: account.projectSecret,
+        apiKey: account.apiKey,
+        stateFile: photonStateFile(resolveStateDir(), account.accountId),
     });
+    // Fail fast on a wrong key or project instead of retrying the socket forever.
+    const project = await client.api.getProject();
     setActivePhotonClient(account.accountId, client);
     const maxBytes = Math.max(account.config.mediaMaxMb ?? DEFAULT_MEDIA_MAX_MB, 1) * 1024 * 1024;
-    const seenMessageIds = new Set();
+    const tracker = new CursorTracker();
+    const inflight = new Set();
     let stopped = false;
-    const handleEvent = async (space, message) => {
-        // Skip our own outbound echoes.
-        if (message.direction && message.direction !== "inbound") {
+    const handleInbound = async (inbound) => {
+        if (!inbound.direct) {
+            logVerbose(`[${account.accountId}] photon: ignoring group message ${inbound.messageId} (group chats unsupported)`);
             return;
         }
-        if (!message.id || !rememberSeenMessageId(seenMessageIds, message.id)) {
-            return;
-        }
-        // Photon does not support group chats; only DM spaces dispatch.
-        if (space.type === "group") {
-            logVerbose(`[${account.accountId}] photon: ignoring group-space message ${message.id} (groups unsupported)`);
-            return;
-        }
-        client.rememberSpace(space);
-        // Keep the live handle so status tapbacks can react to this message.
-        client.rememberMessage(message);
-        const spacePhone = space.phone ?? phoneTargetFromSpaceId(space.id) ?? undefined;
-        const senderId = message.sender?.id ?? spacePhone ?? "";
-        if (!senderId) {
-            logVerbose(`[${account.accountId}] photon: dropping message ${message.id} without sender`);
-            return;
-        }
-        const timestamp = message.timestamp instanceof Date ? message.timestamp.getTime() : Date.now();
-        const reactionFacts = readPhotonReactionContent(message.content);
-        if (reactionFacts) {
-            // Only tapbacks on the agent's own messages reach the agent; provider
-            // hydration of target.direction wins, sent-id cache covers the rest.
-            const targetsOwnMessage = reactionFacts.targetDirection === "outbound" ||
-                client.isOwnMessageId(reactionFacts.targetMessageId);
-            if (!targetsOwnMessage) {
-                logVerbose(`[${account.accountId}] photon: ignoring reaction on non-agent message ${reactionFacts.targetMessageId ?? "(unknown)"}`);
-                return;
-            }
-            await handlePhotonReaction({
-                reaction: {
-                    messageId: message.id,
-                    spaceId: space.id,
-                    spacePhone,
-                    senderId,
-                    emoji: reactionFacts.emoji,
-                    targetMessageId: reactionFacts.targetMessageId,
-                    timestamp,
-                },
-                account,
-                config: cfg,
-                runtime,
-            });
-            return;
-        }
-        const normalized = await normalizePhotonContent(message.content, {
-            maxBytes,
-            onReadError: (err) => {
-                logger.error(`[${account.accountId}] photon media read failed: ${String(err)}`);
-            },
+        client.rememberConversation(inbound.handle, {
+            spaceId: inbound.spaceId,
+            agentUserId: inbound.agentUserId,
+            agentHandle: inbound.agentHandle,
         });
-        if (!normalized) {
-            logVerbose(`[${account.accountId}] photon: ignoring inbound content type ${message.content.type}`);
-            return;
-        }
-        const staged = await stagePhotonAttachments(normalized.attachments, {
+        const staged = await stageAttachments(client, inbound, {
             maxBytes,
-            logVerbose,
+            log: (message) => logger.error(`[${account.accountId}] ${message}`),
         });
         core.channel.activity.record({
             channel: "photon",
@@ -140,14 +89,12 @@ export async function monitorPhotonProvider(opts) {
         });
         await handlePhotonInbound({
             message: {
-                messageId: message.id,
-                spaceId: space.id,
-                spacePhone,
-                senderId,
-                text: normalized.text,
+                messageId: inbound.messageId,
+                senderId: inbound.handle,
+                text: inbound.text,
                 media: staged.media,
                 mediaPlaceholders: staged.placeholders,
-                timestamp,
+                timestamp: inbound.timestamp,
             },
             account,
             config: cfg,
@@ -156,69 +103,69 @@ export async function monitorPhotonProvider(opts) {
         });
     };
     // Each conversation runs in order, but one long agent turn must not hold up
-    // other senders, their tapbacks or pairing replies.
+    // other senders or their pairing replies.
     const spaceQueues = new Map();
-    const enqueueEvent = (space, message) => {
-        const key = space.id || message.sender?.id || "";
+    const onEvent = (event, meta) => {
+        const seq = typeof meta.seq === "number" ? meta.seq : undefined;
+        const finish = () => {
+            if (seq === undefined || stopped) {
+                return;
+            }
+            const advanced = tracker.finish(seq);
+            if (advanced !== undefined) {
+                client.state.setCursor(advanced);
+            }
+        };
+        if (seq !== undefined) {
+            tracker.start(seq);
+        }
+        const inbound = parsePhotonInbound(event);
+        if (!inbound ||
+            client.state.hasSeen(inbound.messageId) ||
+            inflight.has(inbound.messageId)) {
+            finish();
+            return;
+        }
+        inflight.add(inbound.messageId);
+        const key = inbound.spaceId;
         const previous = spaceQueues.get(key) ?? Promise.resolve();
         const next = previous
-            .then(() => handleEvent(space, message))
+            .then(() => handleInbound(inbound))
             .catch((err) => {
-            logger.error(`[${account.accountId}] photon inbound handler failed: ${String(err)}`);
+            logger.error(`[${account.accountId}] photon inbound handler failed for ${inbound.messageId}: ${describePhotonError(err)}`);
         })
             .finally(() => {
+            inflight.delete(inbound.messageId);
+            // Only a handled message counts as seen, so one cut off by a restart
+            // is delivered again.
+            if (!stopped) {
+                client.state.markSeen(inbound.messageId);
+                client.state.save();
+            }
+            finish();
             if (spaceQueues.get(key) === next) {
                 spaceQueues.delete(key);
             }
         });
         spaceQueues.set(key, next);
     };
-    // spectrum-ts reconnects gRPC internally, but if the message iterator itself
-    // throws or ends this consumer would stop forever. Re-subscribe with capped
-    // backoff plus jitter; the seen-id set absorbs any catch-up replay.
-    void (async () => {
-        let backoff = 1000;
-        for (;;) {
-            if (stopped || opts.abortSignal?.aborted) {
-                break;
-            }
-            try {
-                for await (const [space, message] of client.messages) {
-                    if (stopped || opts.abortSignal?.aborted) {
-                        break;
-                    }
-                    backoff = 1000;
-                    enqueueEvent(space, message);
-                }
-                if (!stopped) {
-                    logger.info(`[${account.accountId}] photon inbound stream ended; re-subscribing`);
-                }
-            }
-            catch (err) {
-                if (!stopped) {
-                    logger.error(`[${account.accountId}] photon inbound stream errored; restarting: ${String(err)}`);
-                }
-            }
-            if (stopped || opts.abortSignal?.aborted) {
-                break;
-            }
-            await new Promise((resolve) => {
-                setTimeout(resolve, backoff + Math.random() * backoff * 0.2);
-            });
-            backoff = Math.min(backoff * 2, RESUBSCRIBE_BACKOFF_MAX_MS);
+    const subscription = subscribePhotonEvents({
+        origin: photonApiOrigin(),
+        projectId: account.projectId,
+        apiKey: account.apiKey,
+        cursor: () => client.state.getCursor(),
+        onEvent,
+        log: (message) => logger.info(`[${account.accountId}] ${message}`),
+    });
+    logger.info(`[${account.accountId}] photon connected (project ${project.name}, ${account.projectId}, cursor ${client.state.getCursor()})`);
+    const stop = () => {
+        if (stopped) {
+            return;
         }
-    })();
-    logger.info(`[${account.accountId}] photon connected (project ${account.projectId})`);
-    return {
-        stop: () => {
-            if (stopped) {
-                return;
-            }
-            stopped = true;
-            clearActivePhotonClient(account.accountId, client);
-            void client.stop().catch((err) => {
-                logger.error(`[${account.accountId}] photon stop failed: ${String(err)}`);
-            });
-        },
+        stopped = true;
+        subscription.stop();
+        clearActivePhotonClient(account.accountId, client);
     };
+    opts.abortSignal?.addEventListener("abort", stop, { once: true });
+    return { stop };
 }

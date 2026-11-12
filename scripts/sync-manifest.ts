@@ -13,7 +13,7 @@ export function buildPhotonChannelConfig() {
     schema,
     uiHints: PhotonChannelConfigSchema.uiHints,
     label: "Photon",
-    description: "iMessage through Photon Spectrum",
+    description: "iMessage through Photon",
   };
 }
 

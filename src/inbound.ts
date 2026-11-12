@@ -12,30 +12,24 @@ import { createChannelPairingController } from "openclaw/plugin-sdk/channel-pair
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { OutboundReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
+import { getAgentScopedMediaLocalRoots } from "openclaw/plugin-sdk/media-local-roots";
 import { resolveStorePath } from "openclaw/plugin-sdk/session-store-runtime";
 import { normalizeStringEntries } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { enqueueSystemEvent } from "openclaw/plugin-sdk/system-event-runtime";
+import { describePhotonError } from "./api.js";
 import { getActivePhotonClient } from "./client.js";
 import { normalizePhotonAllowEntry, normalizePhotonSenderId } from "./normalize.js";
 import { getPhotonRuntime } from "./runtime.js";
 import { sendMessagePhoton } from "./send.js";
-import type {
-  CoreConfig,
-  PhotonInboundMessage,
-  PhotonInboundReaction,
-  ResolvedPhotonAccount,
-} from "./types.js";
+import type { CoreConfig, PhotonInboundMessage, ResolvedPhotonAccount } from "./types.js";
 
 const CHANNEL_ID = "photon" as const;
 
 /** Injectable side effects so tests stay safe under shared module registries. */
 export type PhotonInboundDeps = {
   sendMessage?: typeof sendMessagePhoton;
-  enqueueSystemEvent?: typeof enqueueSystemEvent;
 };
-// Processing-status tapbacks, hermes-style: 👀 while the agent works, then
-// 👍/👎. iMessage keeps one tapback per sender, so each react replaces the
-// previous one.
+// Processing-status tapbacks: 👀 while the agent works, then 👍/👎. iMessage
+// keeps one tapback per sender, so each one replaces the previous one.
 const REACTION_PROCESSING = "👀";
 const REACTION_DONE = "👍";
 const REACTION_ERROR = "👎";
@@ -55,6 +49,7 @@ async function deliverPhotonReply(params: {
   target: string;
   accountId: string;
   sendMessage: typeof sendMessagePhoton;
+  mediaLocalRoots?: readonly string[];
   statusSink?: (patch: { lastOutboundAt?: number }) => void;
 }): Promise<void> {
   const text = params.payload.text?.trim() ?? "";
@@ -64,14 +59,15 @@ async function deliverPhotonReply(params: {
   if (!text && mediaUrls.length === 0) {
     return;
   }
-  // First media carries the text as its caption (Photon renders the caption
-  // as a follow-up bubble); remaining media and text-only replies send alone.
+  // First media carries the text as its caption (sent as a bubble after the
+  // image); remaining media and text-only replies send alone.
   if (mediaUrls.length > 0) {
     for (const [index, mediaUrl] of mediaUrls.entries()) {
       await params.sendMessage(params.target, index === 0 ? text : "", {
         cfg: params.cfg,
         accountId: params.accountId,
         mediaUrl,
+        mediaLocalRoots: params.mediaLocalRoots,
       });
     }
   } else {
@@ -86,6 +82,7 @@ async function deliverPhotonReply(params: {
 function createStatusTapback(params: {
   enabled: boolean;
   accountId: string;
+  handle: string;
   messageId: string;
   runtime: RuntimeEnv;
 }) {
@@ -94,13 +91,9 @@ function createStatusTapback(params: {
       return;
     }
     try {
-      const client = getActivePhotonClient(params.accountId);
-      const reacted = await client?.react(params.messageId, emoji);
-      if (!reacted) {
-        params.runtime.log?.(`photon: tapback skipped (no live handle for ${params.messageId})`);
-      }
+      await getActivePhotonClient(params.accountId)?.react(params.handle, params.messageId, emoji);
     } catch (err) {
-      params.runtime.log?.(`photon: tapback ${emoji} failed: ${String(err)}`);
+      params.runtime.log?.(`photon: tapback ${emoji} failed: ${describePhotonError(err)}`);
     }
   };
   return {
@@ -165,7 +158,9 @@ export async function handlePhotonInbound(params: {
     },
   });
 
-  const replyTarget = message.spacePhone ?? message.spaceId;
+  // Replies go back to the sender's handle; the client already knows the DM
+  // it arrived in.
+  const replyTarget = message.senderId;
 
   if (access.ingress.admission === "pairing-required") {
     await pairing.issueChallenge({
@@ -203,6 +198,7 @@ export async function handlePhotonInbound(params: {
     },
   });
   const storePath = resolveStorePath(config.session?.store, { agentId: route.agentId });
+  const mediaLocalRoots = getAgentScopedMediaLocalRoots(config as OpenClawConfig, route.agentId);
   const buildEnvelope = await createChannelInboundEnvelopeBuilderAsync({
     cfg: config as OpenClawConfig,
     route,
@@ -255,9 +251,15 @@ export async function handlePhotonInbound(params: {
     ),
   });
 
+  const client = getActivePhotonClient(account.accountId);
+  // The agent has picked the message up: show it as read.
+  await client?.markRead(message.messageId).catch((err: unknown) => {
+    runtime.log?.(`photon: read receipt failed: ${describePhotonError(err)}`);
+  });
   const tapback = createStatusTapback({
     enabled: account.config.reactions === true,
     accountId: account.accountId,
+    handle: replyTarget,
     messageId: message.messageId,
     runtime,
   });
@@ -284,6 +286,7 @@ export async function handlePhotonInbound(params: {
             target: replyTarget,
             accountId: account.accountId,
             sendMessage,
+            mediaLocalRoots,
             statusSink,
           });
         },
@@ -292,17 +295,15 @@ export async function handlePhotonInbound(params: {
           runtime.error?.(`photon ${info.kind} reply failed: ${String(err)}`);
         },
       },
-      // Native iMessage typing bubble while the agent works; the shared
-      // pipeline owns keepalive and teardown on final/error/abort.
+      // iMessage typing bubble while the agent works; the shared pipeline
+      // owns keepalive and teardown on final/error/abort.
       replyPipeline: {
         typing: {
           start: async () => {
-            const client = getActivePhotonClient(account.accountId);
-            await client?.setTyping(replyTarget, "start");
+            await getActivePhotonClient(account.accountId)?.setTyping(replyTarget, true);
           },
           stop: async () => {
-            const client = getActivePhotonClient(account.accountId);
-            await client?.setTyping(replyTarget, "stop");
+            await getActivePhotonClient(account.accountId)?.setTyping(replyTarget, false);
           },
           onStartError: (err) => {
             runtime.log?.(`photon: typing start failed: ${String(err)}`);
@@ -329,77 +330,4 @@ export async function handlePhotonInbound(params: {
     throw err;
   }
   await (deliveryFailed ? tapback.error() : tapback.done());
-}
-
-/**
- * Route a tapback on one of the agent's own messages to the agent as a
- * system event (hermes parity: `reaction added: <emoji>`). Gated on the
- * `reactions` config flag and the DM sender allow gate; pairing challenges
- * are never issued for reactions.
- */
-export async function handlePhotonReaction(params: {
-  reaction: PhotonInboundReaction;
-  account: ResolvedPhotonAccount;
-  config: CoreConfig;
-  runtime: RuntimeEnv;
-  deps?: PhotonInboundDeps;
-}): Promise<void> {
-  const { reaction, account, config, runtime } = params;
-  const enqueue = params.deps?.enqueueSystemEvent ?? enqueueSystemEvent;
-  if (account.config.reactions !== true) {
-    return;
-  }
-  const core = getPhotonRuntime();
-  const senderId = normalizePhotonSenderId(reaction.senderId);
-  const pairing = createChannelPairingController({
-    core,
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-  });
-
-  const access = await createChannelIngressResolver({
-    channelId: CHANNEL_ID,
-    accountId: account.accountId,
-    identity: photonIngressIdentity,
-    cfg: config as OpenClawConfig,
-    readStoreAllowFrom: async () => await pairing.readAllowFromStore(),
-  }).event({
-    subject: { stableId: senderId },
-    conversation: {
-      kind: "direct",
-      id: senderId,
-    },
-    dmPolicy: account.config.dmPolicy ?? "pairing",
-    allowFrom: account.config.allowFrom,
-  });
-  if (access.senderAccess.decision !== "allow") {
-    runtime.log?.(`photon: drop reaction from ${senderId} (${access.senderAccess.reasonCode})`);
-    return;
-  }
-
-  const route = core.channel.routing.resolveAgentRoute({
-    cfg: config as OpenClawConfig,
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-    peer: {
-      kind: "direct",
-      id: senderId,
-    },
-  });
-  const target = reaction.targetMessageId ? `msg ${reaction.targetMessageId}` : "a message";
-  const text = `Photon reaction added: ${reaction.emoji} by ${senderId} on ${target}`;
-  const contextKey = [
-    "photon",
-    "reaction",
-    senderId,
-    reaction.targetMessageId ?? reaction.messageId,
-    reaction.emoji,
-  ].join(":");
-  const queued = enqueue(text, {
-    sessionKey: route.sessionKey,
-    contextKey,
-  });
-  runtime.log?.(
-    `photon: reaction system event ${queued ? "queued" : "deduped"} session=${route.sessionKey} emoji=${reaction.emoji}`,
-  );
 }
