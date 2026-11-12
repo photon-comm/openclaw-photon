@@ -27,7 +27,8 @@ Choose **Photon (iMessage, no Mac)** from the channel list. The wizard:
 1. **Signs you in to Photon.** It prints a link and a code; open the link, sign in to Photon and approve. Nothing is typed into the terminal.
 2. **Prepares a project.** It finds or creates a Photon project named "OpenClaw" and reads its Spectrum project ID and secret into your OpenClaw config.
 3. **Adds your phone number.** Enter the number you will text from (like `+15551234567`). Photon assigns that number an iMessage line, and the wizard shows the line to text.
-4. **Sets who may talk to the agent.** Add the phone numbers allowed to message it.
+
+When you choose **Finished**, OpenClaw asks whether to configure DM access. Answer yes, pick **Allowlist** and keep your number, so only you can reach the agent. Otherwise the default is pairing (see [DM policy](#dm-policy)).
 
 Already have a Photon project? Skip the sign-in and enter its project ID and secret from the project's Settings page, or set `PHOTON_PROJECT_ID` and `PHOTON_PROJECT_SECRET` in the gateway's environment.
 

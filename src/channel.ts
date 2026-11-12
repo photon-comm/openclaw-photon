@@ -34,12 +34,15 @@ import {
 const meta = {
   id: "photon",
   label: "Photon",
-  selectionLabel: "Photon (iMessage via Spectrum)",
-  docsPath: "/channels/photon",
+  // Keep in sync with `openclaw.channel` in package.json, which OpenClaw reads
+  // before the plugin loads.
+  selectionLabel: "Photon (iMessage, no Mac)",
+  docsPath: "https://github.com/photon-hq/openclaw-photon#readme",
   docsLabel: "photon",
-  blurb: "managed iMessage via Photon Spectrum; project id + secret.",
+  blurb:
+    "iMessage through Photon Spectrum. Sign in with Photon and get a line to text, no Mac or public URL needed.",
   order: 57,
-  detailLabel: "Photon",
+  detailLabel: "Photon iMessage",
   systemImage: "message",
   markdownCapable: true,
 };

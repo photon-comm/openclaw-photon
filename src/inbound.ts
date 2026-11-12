@@ -1,6 +1,7 @@
 // Photon plugin module implements inbound behavior.
 import {
   buildChannelInboundEventContext,
+  createChannelInboundEnvelopeBuilderAsync,
   toInboundMediaFacts,
 } from "openclaw/plugin-sdk/channel-inbound";
 import {
@@ -9,9 +10,9 @@ import {
 } from "openclaw/plugin-sdk/channel-ingress-runtime";
 import { createChannelPairingController } from "openclaw/plugin-sdk/channel-pairing";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
-import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
 import type { OutboundReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
+import { resolveStorePath } from "openclaw/plugin-sdk/session-store-runtime";
 import { normalizeStringEntries } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { enqueueSystemEvent } from "openclaw/plugin-sdk/system-event-runtime";
 import { getActivePhotonClient } from "./client.js";
@@ -192,7 +193,7 @@ export async function handlePhotonInbound(params: {
     return;
   }
 
-  const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
+  const route = core.channel.routing.resolveAgentRoute({
     cfg: config as OpenClawConfig,
     channel: CHANNEL_ID,
     accountId: account.accountId,
@@ -200,11 +201,13 @@ export async function handlePhotonInbound(params: {
       kind: "direct",
       id: senderId,
     },
-    runtime: core.channel,
-    sessionStore: config.session?.store,
   });
-
-  const { storePath, body } = buildEnvelope({
+  const storePath = resolveStorePath(config.session?.store, { agentId: route.agentId });
+  const buildEnvelope = await createChannelInboundEnvelopeBuilderAsync({
+    cfg: config as OpenClawConfig,
+    route,
+  });
+  const body = buildEnvelope({
     channel: "Photon",
     from: senderId,
     timestamp: message.timestamp,
