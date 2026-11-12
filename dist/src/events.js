@@ -16,7 +16,7 @@ export function subscribePhotonEvents(opts) {
         reconnectionDelay: 2_000,
         reconnectionDelayMax: 60_000,
     });
-    // Deliveries from an earlier connection are dropped once a new one starts.
+    // Acknowledgements from an earlier connection are ignored once a new one starts.
     let generation = 0;
     let subscribed = false;
     let stopped = false;
@@ -55,6 +55,9 @@ export function subscribePhotonEvents(opts) {
                 return;
             }
             subscribed = true;
+            if (typeof result.startSeq === "number") {
+                opts.onSubscribed?.(result.startSeq);
+            }
             opts.log(`photon events: subscribed from cursor ${startSeq} (connection ${result.connectionId ?? "?"}, api ${result.apiVersion ?? "?"})`);
         });
     });

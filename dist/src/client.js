@@ -34,7 +34,7 @@ export class PhotonClient {
             origin: options.origin,
             fetch: options.fetch,
         });
-        this.state = new PhotonStateStore(options.stateFile, options.projectId);
+        this.state = new PhotonStateStore(options.stateFile, options.projectId, options.onStateError);
     }
     get projectId() {
         return this.options.projectId;

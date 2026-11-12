@@ -137,7 +137,7 @@ async function preparePhotonLine(prompter, token, project) {
 }
 /**
  * One-pass setup: sign in to Photon with a device code, pick or create the
- * project, create the gateway's API key, and give the person a line.
+ * project, give the person a line, and create the gateway's API key.
  */
 async function runPhotonDeviceSetup(prompter) {
     const code = await requestPhotonDeviceCode();
@@ -149,8 +149,9 @@ async function runPhotonDeviceSetup(prompter) {
     ].join("\n"), t("wizard.photon.deviceLoginTitle"));
     const signIn = await withProgress(prompter, t("wizard.photon.deviceWaiting"), () => pollPhotonDeviceToken(code));
     const project = await choosePhotonProject(prompter, signIn.token);
-    const key = await withProgress(prompter, t("wizard.photon.creatingKey"), () => createPhotonGatewayKey(signIn.token, project.projectId));
+    // The line first: a setup cancelled at that prompt leaves no unused key.
     const handle = await preparePhotonLine(prompter, signIn.token, project);
+    const key = await withProgress(prompter, t("wizard.photon.creatingKey"), () => createPhotonGatewayKey(signIn.token, project.projectId));
     return { project, apiKey: key.secret, handle };
 }
 export const photonSetupAdapter = {

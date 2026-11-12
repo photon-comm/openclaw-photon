@@ -20,6 +20,8 @@ export type PhotonClientOptions = {
   stateFile?: string;
   origin?: string;
   fetch?: typeof globalThis.fetch;
+  /** Reports a state file that can't be written. */
+  onStateError?: (err: unknown) => void;
 };
 
 export type PhotonSendResult = {
@@ -60,7 +62,7 @@ export class PhotonClient {
       origin: options.origin,
       fetch: options.fetch,
     });
-    this.state = new PhotonStateStore(options.stateFile, options.projectId);
+    this.state = new PhotonStateStore(options.stateFile, options.projectId, options.onStateError);
   }
 
   get projectId(): string {

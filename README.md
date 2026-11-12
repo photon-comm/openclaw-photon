@@ -30,8 +30,8 @@ Choose **Photon (iMessage, no Mac)** from the channel list. The wizard:
 
 1. **Signs you in to Photon.** It prints a link and a code; open the link on any device, sign in to Photon and confirm the code. Your password never goes into the terminal, and the sign-in isn't stored.
 2. **Picks the project.** Choose one of your projects, or let it create a new one named "OpenClaw". With more than one organization, it asks which first.
-3. **Creates an API key** for the gateway in that project, with `project:read`, `project:write` and `platforms:read`, and saves it in your OpenClaw config.
-4. **Gives you a line.** Enter the phone number (like `+15551234567`) or iMessage email you will text from. On a shared-line project, Photon assigns that sender a line from its pool, and the wizard shows the number to text. On a project with dedicated lines, it shows the project's own line.
+3. **Gives you a line.** Enter the phone number (like `+15551234567`) or iMessage email you will text from. On a shared-line project, Photon assigns that sender a line from its pool, and the wizard shows the number to text. On a project with dedicated lines, it shows the project's own line.
+4. **Creates an API key** for the gateway in that project, with `project:read`, `project:write` and `platforms:read`, and saves it in your OpenClaw config.
 
 When you choose **Finished**, OpenClaw asks whether to configure DM access. Answer yes, pick **Allowlist** and keep your number, so only you can reach the agent. Otherwise the default is pairing (see [DM policy](#dm-policy)).
 

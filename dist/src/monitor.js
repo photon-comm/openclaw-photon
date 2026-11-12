@@ -60,13 +60,17 @@ export async function monitorPhotonProvider(opts) {
         projectId: account.projectId,
         apiKey: account.apiKey,
         stateFile: photonStateFile(resolveStateDir(), account.accountId),
+        onStateError: (err) => {
+            logger.error(`[${account.accountId}] photon: could not save state: ${String(err)}`);
+        },
     });
     // Fail fast on a wrong key or project instead of retrying the socket forever.
     const project = await client.api.getProject();
     setActivePhotonClient(account.accountId, client);
     const maxBytes = Math.max(account.config.mediaMaxMb ?? DEFAULT_MEDIA_MAX_MB, 1) * 1024 * 1024;
-    const tracker = new CursorTracker();
-    const inflight = new Set();
+    const tracker = new CursorTracker(client.state.getCursor());
+    // Messages being handled, by id, with the promise that settles when done.
+    const inflight = new Map();
     let stopped = false;
     const handleInbound = async (inbound) => {
         if (!inbound.direct) {
@@ -107,8 +111,10 @@ export async function monitorPhotonProvider(opts) {
     const spaceQueues = new Map();
     const onEvent = (event, meta) => {
         const seq = typeof meta.seq === "number" ? meta.seq : undefined;
+        // A replay of a delivery that is still being handled isn't tracked twice.
+        const tracked = seq !== undefined && tracker.start(seq);
         const finish = () => {
-            if (seq === undefined || stopped) {
+            if (!tracked || seq === undefined || stopped) {
                 return;
             }
             const advanced = tracker.finish(seq);
@@ -116,21 +122,22 @@ export async function monitorPhotonProvider(opts) {
                 client.state.setCursor(advanced);
             }
         };
-        if (seq !== undefined) {
-            tracker.start(seq);
-        }
         const inbound = parsePhotonInbound(event);
-        if (!inbound ||
-            client.state.hasSeen(inbound.messageId) ||
-            inflight.has(inbound.messageId)) {
+        if (!inbound || client.state.hasSeen(inbound.messageId)) {
             finish();
             return;
         }
-        inflight.add(inbound.messageId);
+        const running = inflight.get(inbound.messageId);
+        if (running) {
+            // Redelivered while its first delivery is still running: that one
+            // finishes it, and this sequence only moves on once it has.
+            void running.then(finish);
+            return;
+        }
         const key = inbound.spaceId;
         const previous = spaceQueues.get(key) ?? Promise.resolve();
         const next = previous
-            .then(() => handleInbound(inbound))
+            .then(() => (stopped ? undefined : handleInbound(inbound)))
             .catch((err) => {
             logger.error(`[${account.accountId}] photon inbound handler failed for ${inbound.messageId}: ${describePhotonError(err)}`);
         })
@@ -147,6 +154,7 @@ export async function monitorPhotonProvider(opts) {
                 spaceQueues.delete(key);
             }
         });
+        inflight.set(inbound.messageId, next);
         spaceQueues.set(key, next);
     };
     const subscription = subscribePhotonEvents({
@@ -155,6 +163,13 @@ export async function monitorPhotonProvider(opts) {
         apiKey: account.apiKey,
         cursor: () => client.state.getCursor(),
         onEvent,
+        // On a first start (cursor 0), keep the cursor Photon accepted, so a
+        // disconnect before the first message doesn't skip the time offline.
+        onSubscribed: (acceptedSeq) => {
+            if (client.state.getCursor() === 0 && acceptedSeq > 0) {
+                client.state.setCursor(acceptedSeq);
+            }
+        },
         log: (message) => logger.info(`[${account.accountId}] ${message}`),
     });
     logger.info(`[${account.accountId}] photon connected (project ${project.name}, ${account.projectId}, cursor ${client.state.getCursor()})`);

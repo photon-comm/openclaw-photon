@@ -25,6 +25,8 @@ export type PhotonEventSubscriptionOptions = {
   cursor: () => number;
   /** Called in delivery order; must not throw. */
   onEvent: (event: PhotonEvent, meta: PhotonDeliveryMeta) => void;
+  /** The cursor Photon accepted for this subscription. */
+  onSubscribed?: (acceptedSeq: number) => void;
   log: (message: string) => void;
   /** Socket factory, for tests. */
   connect?: typeof io;
@@ -44,7 +46,7 @@ export function subscribePhotonEvents(opts: PhotonEventSubscriptionOptions): Pho
     reconnectionDelay: 2_000,
     reconnectionDelayMax: 60_000,
   });
-  // Deliveries from an earlier connection are dropped once a new one starts.
+  // Acknowledgements from an earlier connection are ignored once a new one starts.
   let generation = 0;
   let subscribed = false;
   let stopped = false;
@@ -75,7 +77,10 @@ export function subscribePhotonEvents(opts: PhotonEventSubscriptionOptions): Pho
       .emit(
         "subscribe",
         { startSeq },
-        (err: unknown, result: { ok?: boolean; error?: unknown; connectionId?: string; apiVersion?: string }) => {
+        (
+          err: unknown,
+          result: { ok?: boolean; error?: unknown; connectionId?: string; apiVersion?: string; startSeq?: unknown },
+        ) => {
           if (current !== generation || stopped) {
             return;
           }
@@ -88,6 +93,9 @@ export function subscribePhotonEvents(opts: PhotonEventSubscriptionOptions): Pho
             return;
           }
           subscribed = true;
+          if (typeof result.startSeq === "number") {
+            opts.onSubscribed?.(result.startSeq);
+          }
           opts.log(
             `photon events: subscribed from cursor ${startSeq} (connection ${result.connectionId ?? "?"}, api ${result.apiVersion ?? "?"})`,
           );

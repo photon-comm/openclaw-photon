@@ -207,7 +207,7 @@ async function preparePhotonLine(
 
 /**
  * One-pass setup: sign in to Photon with a device code, pick or create the
- * project, create the gateway's API key, and give the person a line.
+ * project, give the person a line, and create the gateway's API key.
  */
 async function runPhotonDeviceSetup(prompter: WizardPrompter): Promise<PhotonDeviceSetupResult> {
   const code = await requestPhotonDeviceCode();
@@ -224,10 +224,11 @@ async function runPhotonDeviceSetup(prompter: WizardPrompter): Promise<PhotonDev
     pollPhotonDeviceToken(code),
   );
   const project = await choosePhotonProject(prompter, signIn.token);
+  // The line first: a setup cancelled at that prompt leaves no unused key.
+  const handle = await preparePhotonLine(prompter, signIn.token, project);
   const key = await withProgress(prompter, t("wizard.photon.creatingKey"), () =>
     createPhotonGatewayKey(signIn.token, project.projectId),
   );
-  const handle = await preparePhotonLine(prompter, signIn.token, project);
   return { project, apiKey: key.secret, handle };
 }
 

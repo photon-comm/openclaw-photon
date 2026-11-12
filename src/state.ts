@@ -29,26 +29,39 @@ export class PhotonStateStore {
   constructor(
     private readonly file: string | undefined,
     private readonly projectId: string,
+    /** Called when the file can't be written; the gateway keeps running. */
+    private readonly onError?: (err: unknown) => void,
   ) {
     if (!file) {
       return;
     }
-    let data: PersistedState = {};
+    let parsed: unknown;
     try {
-      data = JSON.parse(readFileSync(file, "utf8")) as PersistedState;
+      parsed = JSON.parse(readFileSync(file, "utf8"));
     } catch {
-      data = {};
+      parsed = undefined;
     }
+    // A missing, unreadable or hand-edited file starts from scratch.
+    const data: PersistedState =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as PersistedState) : {};
     // A different project starts from scratch: its cursor means nothing here.
     if (data.projectId !== projectId) {
       return;
     }
     this.cursor = typeof data.cursor === "number" && data.cursor > 0 ? data.cursor : 0;
-    for (const id of data.seen ?? []) {
-      this.markSeen(id);
+    for (const id of Array.isArray(data.seen) ? data.seen : []) {
+      if (typeof id === "string") {
+        this.markSeen(id);
+      }
     }
-    for (const [handle, conversation] of Object.entries(data.conversations ?? {})) {
-      if (conversation?.spaceId && conversation.agentUserId) {
+    const conversations =
+      data.conversations && typeof data.conversations === "object" ? data.conversations : {};
+    for (const [handle, conversation] of Object.entries(conversations)) {
+      if (
+        conversation &&
+        typeof conversation.spaceId === "string" &&
+        typeof conversation.agentUserId === "string"
+      ) {
         this.conversations.set(handle, conversation);
       }
     }
@@ -116,6 +129,7 @@ export class PhotonStateStore {
     }
   }
 
+  /** Writes the state file. Never throws: a failed write is reported and retried on the next save. */
   save(): void {
     if (!this.file) {
       return;
@@ -126,11 +140,15 @@ export class PhotonStateStore {
       seen: this.seen,
       conversations: Object.fromEntries(this.conversations),
     };
-    mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
-    // Write and rename, so a crash never leaves half a file.
-    const tmp = `${this.file}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(data)}\n`, { mode: 0o600 });
-    renameSync(tmp, this.file);
+    try {
+      mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
+      // Write and rename, so a crash never leaves half a file.
+      const tmp = `${this.file}.${process.pid}.tmp`;
+      writeFileSync(tmp, `${JSON.stringify(data)}\n`, { mode: 0o600 });
+      renameSync(tmp, this.file);
+    } catch (err) {
+      this.onError?.(err);
+    }
   }
 }
 
@@ -143,11 +161,25 @@ export class CursorTracker {
   private readonly pending: number[] = [];
   private readonly done = new Set<number>();
 
-  start(seq: number): void {
+  /** `committed` is the cursor already saved; nothing at or below it is tracked again. */
+  constructor(private committed = 0) {}
+
+  /**
+   * Track a delivery. Returns false for a replay of a sequence that is
+   * already tracked or already committed: finishing it is the original's job.
+   */
+  start(seq: number): boolean {
+    if (seq <= this.committed || this.pending.includes(seq)) {
+      return false;
+    }
     this.pending.push(seq);
+    return true;
   }
 
   finish(seq: number): number | undefined {
+    if (!this.pending.includes(seq)) {
+      return undefined;
+    }
     this.done.add(seq);
     let advanced: number | undefined;
     while (this.pending.length > 0 && this.done.has(this.pending[0])) {
@@ -155,6 +187,9 @@ export class CursorTracker {
       if (advanced !== undefined) {
         this.done.delete(advanced);
       }
+    }
+    if (advanced !== undefined) {
+      this.committed = advanced;
     }
     return advanced;
   }
