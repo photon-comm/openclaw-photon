@@ -11,8 +11,10 @@ Text your [OpenClaw](https://github.com/openclaw/openclaw) agent from iMessage. 
 ## Installation
 
 ```bash
-openclaw plugins install github:photon-hq/openclaw-photon
+openclaw plugins install git:github.com/photon-hq/openclaw-photon
 ```
+
+OpenClaw asks two questions: whether to install a plugin that doesn't come from ClawHub, and whether to grant its capabilities (the Photon channel; no access to other conversations). Answer `y` to both. In a script, pass `--force --accept-capabilities` instead. To pin a release, add its tag: `git:github.com/photon-hq/openclaw-photon@v0.1.0`.
 
 ## Setup
 
@@ -24,7 +26,7 @@ openclaw configure --section channels
 
 Choose **Photon (iMessage, no Mac)** from the channel list. The wizard:
 
-1. **Signs you in to Photon.** It prints a link and a code; open the link, sign in to Photon and approve. Nothing is typed into the terminal.
+1. **Signs you in to Photon.** It prints a link and a code; open the link on any device, sign in to Photon and approve. Your password never goes into the terminal.
 2. **Prepares a project.** It finds or creates a Photon project named "OpenClaw" and reads its Spectrum project ID and secret into your OpenClaw config.
 3. **Adds your phone number.** Enter the number you will text from (like `+15551234567`). Photon assigns that number an iMessage line, and the wizard shows the line to text.
 
@@ -105,9 +107,11 @@ To send from the agent or the CLI, address a person by phone number, with or wit
 
 ```bash
 npm install
-npm run check   # typecheck and tests
+npm run check   # typecheck, tests and build
 openclaw plugins install --link .   # load this checkout into a local OpenClaw
 ```
+
+OpenClaw installs plugins from git without running build scripts, so the compiled `dist/` folder is committed. Run `npm run build` and commit `dist/` with every source change; CI fails when it is out of date.
 
 ## License
 
