@@ -213,6 +213,25 @@ export async function monitorPhotonProvider(
     });
   };
 
+  // Each conversation runs in order, but one long agent turn must not hold up
+  // other senders, their tapbacks or pairing replies.
+  const spaceQueues = new Map<string, Promise<void>>();
+  const enqueueEvent = (space: PhotonSpace, message: PhotonSpectrumMessage) => {
+    const key = space.id || message.sender?.id || "";
+    const previous = spaceQueues.get(key) ?? Promise.resolve();
+    const next = previous
+      .then(() => handleEvent(space, message))
+      .catch((err: unknown) => {
+        logger.error(`[${account.accountId}] photon inbound handler failed: ${String(err)}`);
+      })
+      .finally(() => {
+        if (spaceQueues.get(key) === next) {
+          spaceQueues.delete(key);
+        }
+      });
+    spaceQueues.set(key, next);
+  };
+
   // spectrum-ts reconnects gRPC internally, but if the message iterator itself
   // throws or ends this consumer would stop forever. Re-subscribe with capped
   // backoff plus jitter; the seen-id set absorbs any catch-up replay.
@@ -228,11 +247,7 @@ export async function monitorPhotonProvider(
             break;
           }
           backoff = 1000;
-          try {
-            await handleEvent(space, message);
-          } catch (err) {
-            logger.error(`[${account.accountId}] photon inbound handler failed: ${String(err)}`);
-          }
+          enqueueEvent(space, message);
         }
         if (!stopped) {
           logger.info(`[${account.accountId}] photon inbound stream ended; re-subscribing`);

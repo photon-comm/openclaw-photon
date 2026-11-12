@@ -24,6 +24,12 @@ const STRINGS = {
   "wizard.photon.assignedLine": "Text {line} from your phone to reach your agent.",
   "wizard.photon.assignedLinePending":
     "Your number is added. Photon is still assigning the line to text; it shows under Users in your project at https://app.photon.codes.",
+  "wizard.photon.noPhoneAdded":
+    "No number added. Add the number you'll text from under Users in your project at https://app.photon.codes, or run setup again.",
+  "wizard.photon.registerFailed":
+    "Couldn't add your number ({error}). The project is saved; add the number under Users at https://app.photon.codes, or run setup again.",
+  "wizard.photon.rotateSecretPrompt":
+    "Photon didn't return the secret of your existing \"{name}\" project. Generate a new one? Anything still using the old secret stops working.",
   "wizard.photon.secretRotated":
     "Setup generated a new project secret. Anything else using the old one needs the new secret.",
   "wizard.photon.allowlistTitle": "Who can message the agent",

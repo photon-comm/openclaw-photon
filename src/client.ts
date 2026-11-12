@@ -286,8 +286,14 @@ export class PhotonClient {
     // iMessage delivers the caption as a separate bubble; send it after the
     // media so the attachment renders first.
     if (caption?.trim()) {
-      const captionResult = await space.send(markdown(caption));
-      this.rememberSentMessageId(captionResult?.id ?? null);
+      try {
+        const captionResult = await space.send(markdown(caption));
+        this.rememberSentMessageId(captionResult?.id ?? null);
+      } catch (err) {
+        // The attachment is already delivered; failing here would invite a
+        // retry that sends it twice.
+        console.warn(`photon: caption send failed after media delivery: ${String(err)}`);
+      }
     }
     return { messageId: result?.id ?? null, spaceId: space.id };
   }

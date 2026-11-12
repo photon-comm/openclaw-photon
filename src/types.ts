@@ -113,11 +113,18 @@ function resolveEnvProjectSecret(accountId: string): string {
 /** List all configured Photon account ids. */
 export function listPhotonAccountIds(cfg: OpenClawConfig): string[] {
   const photonCfg = getPhotonConfig(cfg);
-  const projectId = photonCfg?.projectId?.trim() || process.env.PHOTON_PROJECT_ID?.trim();
+  const configProjectId = photonCfg?.projectId?.trim();
+  const configSecret = normalizeSecretInputString(photonCfg?.projectSecret);
+  const projectId = configProjectId || process.env.PHOTON_PROJECT_ID?.trim();
+  // Environment credentials only resolve for the default account, so an
+  // account that leans on them must be listed under that id.
+  const fullyConfigured = Boolean(configProjectId && configSecret);
   return listCombinedAccountIds({
     configuredAccountIds: [],
     implicitAccountId: projectId
-      ? (resolveConfiguredDefaultPhotonAccountId(cfg) ?? DEFAULT_ACCOUNT_ID)
+      ? fullyConfigured
+        ? (resolveConfiguredDefaultPhotonAccountId(cfg) ?? DEFAULT_ACCOUNT_ID)
+        : DEFAULT_ACCOUNT_ID
       : undefined,
   });
 }

@@ -112,6 +112,11 @@ async function requireOkData(response: Response, action: string): Promise<unknow
   if (!response.ok) {
     throw new Error(`Photon ${action} failed: HTTP ${response.status}: ${errorDetail(body)}`);
   }
+  // A success without a readable body must not look like an empty record:
+  // an empty project lookup would otherwise trigger a secret rotation.
+  if (data === undefined) {
+    throw new Error(`Photon ${action} returned an unreadable response`);
+  }
   // The dashboard reports some failures as HTTP 200 with an `error` field.
   if (typeof body.error === "string" && body.error) {
     throw new Error(`Photon ${action} failed: ${body.error}`);
@@ -392,6 +397,12 @@ export async function getPhotonImessageLine(
 export async function provisionPhotonProject(params: {
   token: string;
   projectName?: string;
+  /**
+   * Asked before regenerating the secret of a project that already existed,
+   * since anything still using the old secret stops working. Without it,
+   * setup refuses to rotate an existing project's secret.
+   */
+  confirmRotateSecret?: (projectName: string) => Promise<boolean>;
   deps?: PhotonProvisionDeps;
 }): Promise<PhotonProvisionedProject> {
   const projectName = params.projectName?.trim() || DEFAULT_PHOTON_PROJECT_NAME;
@@ -406,9 +417,16 @@ export async function provisionPhotonProject(params: {
   // Older dashboards kept a separate Spectrum id; current ones reuse the
   // project id for Spectrum.
   const spectrumProjectId = asString(project.spectrumProjectId) ?? dashboardProjectId;
-  const projectSecret =
-    asString(project.projectSecret) ??
-    (await regenerateProjectSecret(params.token, dashboardProjectId, params.deps));
+  let projectSecret = asString(project.projectSecret);
+  if (!projectSecret) {
+    const name = asString(project.name) ?? projectName;
+    if (existing && !(await params.confirmRotateSecret?.(name))) {
+      throw new Error(
+        `Photon did not return the secret of project "${name}". Enter its project ID and secret from Settings at https://app.photon.codes instead.`,
+      );
+    }
+    projectSecret = await regenerateProjectSecret(params.token, dashboardProjectId, params.deps);
+  }
   return {
     dashboardProjectId,
     spectrumProjectId,
@@ -423,6 +441,11 @@ export async function provisionPhotonProject(params: {
 
 function normalizePhoneDigits(phone: string): string {
   return phone.replace(/[^\d+]/g, "");
+}
+
+/** The E.164 form Spectrum stores, e.g. `+1 (555) 123-4567` -> `+15551234567`. */
+export function normalizePhotonPhone(phone: string): string {
+  return normalizePhoneDigits(phone.trim());
 }
 
 export function isValidPhotonPhone(phone: string): boolean {

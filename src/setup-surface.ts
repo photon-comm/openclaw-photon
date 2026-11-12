@@ -20,6 +20,7 @@ import { isPhonePhotonTarget, normalizePhotonAllowEntry } from "./normalize.js";
 import {
   getPhotonImessageLine,
   isValidPhotonPhone,
+  normalizePhotonPhone,
   pollPhotonDeviceToken,
   provisionPhotonProject,
   registerPhotonUser,
@@ -76,7 +77,13 @@ const promptPhotonAllowFrom = createTopLevelChannelParsedAllowFromPrompt({
   message: t("wizard.photon.allowFromPrompt"),
   placeholder: "+15551234567, +447700900123",
   parseEntries: parsePhotonAllowFrom,
-  mergeEntries: ({ existing, parsed }) => mergeAllowFromEntries(existing, parsed),
+  // This prompt runs for the allowlist policy: drop a "*" left over from an
+  // earlier open policy, or the allowlist would still admit everyone.
+  mergeEntries: ({ existing, parsed }) =>
+    mergeAllowFromEntries(
+      existing.filter((entry) => normalizePhotonAllowEntry(String(entry)) !== "*"),
+      parsed,
+    ),
 });
 
 const photonDmPolicy: ChannelSetupDmPolicy = createTopLevelChannelDmPolicy({
@@ -121,13 +128,33 @@ async function runPhotonDeviceSetup(prompter: WizardPrompter): Promise<PhotonDev
 
   const provisioning = prompter.progress(t("wizard.photon.provisioning"));
   let project: PhotonProvisionedProject;
+  let provisioningStopped = false;
+  const stopProvisioning = () => {
+    if (!provisioningStopped) {
+      provisioningStopped = true;
+      provisioning.stop();
+    }
+  };
   try {
-    project = await provisionPhotonProject({ token });
+    project = await provisionPhotonProject({
+      token,
+      confirmRotateSecret: async (name) => {
+        stopProvisioning();
+        return await prompter.confirm({
+          message: t("wizard.photon.rotateSecretPrompt", { name }),
+          initialValue: false,
+        });
+      },
+    });
   } finally {
-    provisioning.stop();
+    stopProvisioning();
+  }
+  if (project.secretRotated) {
+    // Say it now: later steps can fail, and the new secret is saved either way.
+    await prompter.note(t("wizard.photon.secretRotated"), t("wizard.photon.provisionedTitle"));
   }
 
-  const phoneNumber = (
+  const enteredPhone = (
     await prompter.text({
       message: t("wizard.photon.phonePrompt"),
       placeholder: "+15551234567",
@@ -137,8 +164,10 @@ async function runPhotonDeviceSetup(prompter: WizardPrompter): Promise<PhotonDev
           : "Use an E.164 phone number, e.g. +15551234567",
     })
   ).trim();
+  const phoneNumber = enteredPhone ? normalizePhotonPhone(enteredPhone) : "";
 
   let assignedLine: string | undefined;
+  let registerError: string | undefined;
   if (phoneNumber) {
     const registering = prompter.progress(t("wizard.photon.registeringUser"));
     try {
@@ -148,12 +177,15 @@ async function runPhotonDeviceSetup(prompter: WizardPrompter): Promise<PhotonDev
         phoneNumber,
       });
       assignedLine = user.assignedPhoneNumber;
+    } catch (err) {
+      // Keep the project credentials; the number can be added later.
+      registerError = err instanceof Error ? err.message : String(err);
     } finally {
       registering.stop();
     }
     // Freshly created users may not have a line assigned yet; the project
     // line inventory is the fallback source for the number to text.
-    if (!assignedLine) {
+    if (!assignedLine && !registerError) {
       try {
         assignedLine = await getPhotonImessageLine(token, project.dashboardProjectId);
       } catch {
@@ -165,10 +197,13 @@ async function runPhotonDeviceSetup(prompter: WizardPrompter): Promise<PhotonDev
   await prompter.note(
     [
       t("wizard.photon.provisionedProject", { name: project.projectName }),
-      ...(project.secretRotated ? [t("wizard.photon.secretRotated")] : []),
-      assignedLine
-        ? t("wizard.photon.assignedLine", { line: assignedLine })
-        : t("wizard.photon.assignedLinePending"),
+      !phoneNumber
+        ? t("wizard.photon.noPhoneAdded")
+        : registerError
+          ? t("wizard.photon.registerFailed", { error: registerError })
+          : assignedLine
+            ? t("wizard.photon.assignedLine", { line: assignedLine })
+            : t("wizard.photon.assignedLinePending"),
     ].join("\n"),
     t("wizard.photon.provisionedTitle"),
   );
@@ -184,13 +219,20 @@ export const photonSetupAdapter: ChannelSetupAdapter = {
       channel,
       patch: buildPhotonSetupPatch(accountId, name?.trim() ? { name: name.trim() } : {}),
     }),
-  validateInput: ({ input }) => {
+  validateInput: ({ accountId, input }) => {
     const typedInput = input as {
       useEnv?: boolean;
       projectId?: string;
       projectSecret?: string;
     };
     if (typedInput.useEnv) {
+      // Environment credentials only apply to the default account.
+      if (accountId !== DEFAULT_ACCOUNT_ID) {
+        return "Photon --use-env only works for the default account.";
+      }
+      if (!process.env.PHOTON_PROJECT_ID?.trim() || !process.env.PHOTON_PROJECT_SECRET?.trim()) {
+        return "Photon --use-env needs PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET in the environment.";
+      }
       return null;
     }
     if (!typedInput.projectId?.trim()) {

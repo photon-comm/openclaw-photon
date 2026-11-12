@@ -76,4 +76,14 @@ describe("photon account resolution", () => {
     expect(account.enabled).toBe(false);
     expect(account.configured).toBe(true);
   });
+
+  it("lists env-backed credentials under the default account id", () => {
+    process.env.PHOTON_PROJECT_ID = "proj-env";
+    process.env.PHOTON_PROJECT_SECRET = "secret-env";
+    const cfg = { channels: { photon: { defaultAccount: "work" } } } as CoreConfig;
+
+    expect(listPhotonAccountIds(cfg)).toEqual(["default"]);
+    const account = resolvePhotonAccount({ cfg, accountId: listPhotonAccountIds(cfg)[0] });
+    expect(account.configured).toBe(true);
+  });
 });

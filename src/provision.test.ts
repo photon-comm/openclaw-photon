@@ -129,17 +129,60 @@ describe("photon project provisioning", () => {
     ]);
   });
 
-  it("regenerates the secret only when the dashboard shows none", async () => {
+  it("regenerates an existing project's secret only after the user agrees", async () => {
     const { fetchImpl, calls } = createFetchQueue([
       () => jsonResponse(200, { data: [{ id: "prj-1", name: "openclaw" }] }),
       () => jsonResponse(200, { id: "prj-1", name: "OpenClaw", projectSecret: null }),
       () => jsonResponse(200, { success: true, projectSecret: "secret-2" }),
     ]);
+    const asked: string[] = [];
 
-    const project = await provisionPhotonProject({ token: "token-1", deps: deps(fetchImpl) });
+    const project = await provisionPhotonProject({
+      token: "token-1",
+      confirmRotateSecret: async (name) => {
+        asked.push(name);
+        return true;
+      },
+      deps: deps(fetchImpl),
+    });
+    expect(asked).toEqual(["OpenClaw"]);
     expect(project.projectSecret).toBe("secret-2");
     expect(project.secretRotated).toBe(true);
     expect(calls.at(-1)?.url).toBe("https://app.photon.codes/api/projects/prj-1/regenerate-secret");
+  });
+
+  it("leaves an existing project's secret alone when the user declines", async () => {
+    const { fetchImpl, calls } = createFetchQueue([
+      () => jsonResponse(200, [{ id: "prj-1", name: "OpenClaw" }]),
+      () => jsonResponse(200, { id: "prj-1", name: "OpenClaw" }),
+    ]);
+
+    await expect(
+      provisionPhotonProject({
+        token: "token-1",
+        confirmRotateSecret: async () => false,
+        deps: deps(fetchImpl),
+      }),
+    ).rejects.toThrow(/did not return the secret/);
+    expect(calls.map((call) => call.url)).not.toContain(
+      "https://app.photon.codes/api/projects/prj-1/regenerate-secret",
+    );
+  });
+
+  it("fails on an unreadable project lookup instead of rotating the secret", async () => {
+    const { fetchImpl, calls } = createFetchQueue([
+      () => jsonResponse(200, [{ id: "prj-1", name: "OpenClaw" }]),
+      () => new Response("not json", { status: 200 }),
+    ]);
+
+    await expect(
+      provisionPhotonProject({
+        token: "token-1",
+        confirmRotateSecret: async () => true,
+        deps: deps(fetchImpl),
+      }),
+    ).rejects.toThrow(/unreadable/);
+    expect(calls).toHaveLength(2);
   });
 
   it("keeps a separate Spectrum project id when an older dashboard returns one", async () => {
