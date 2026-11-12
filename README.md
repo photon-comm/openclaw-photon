@@ -113,6 +113,12 @@ openclaw plugins install --link .   # load this checkout into a local OpenClaw
 
 OpenClaw installs plugins from git without running build scripts, so the compiled `dist/` folder is committed. Run `npm run build` and commit `dist/` with every source change; CI fails when it is out of date.
 
+### Releasing
+
+1. Raise `version` in `package.json`, run `npm install --package-lock-only` and `npm run build`, and merge.
+2. Publish a GitHub release tagged `v` plus that version (for example `v0.1.1`). The **Release to npm** workflow publishes it to npm.
+3. Run **Release to ClawHub** with the same tag: `gh workflow run clawhub.yml -f tag=v0.1.1`.
+
 ## License
 
 MIT

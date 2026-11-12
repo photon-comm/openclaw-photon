@@ -11,12 +11,6 @@
   "channels": [
     "photon"
   ],
-  "channelEnvVars": {
-    "photon": [
-      "PHOTON_PROJECT_ID",
-      "PHOTON_PROJECT_SECRET"
-    ]
-  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

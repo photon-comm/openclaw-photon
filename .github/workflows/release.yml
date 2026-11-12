@@ -1,0 +1,78 @@
+name: Release to npm
+
+# Publishes a release to npm as @photon-ai/openclaw-photon. Publishing a GitHub
+# Release runs it; run it by hand with the tag to retry one.
+#
+# BuildSpace's publish-npm block tries npm trusted publishing (OIDC) first and
+# falls back to the organization's NPM_TOKEN. Once a trusted publisher for this
+# workflow is set up on npmjs.com, releases publish without the token and with
+# provenance, with no change here.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, such as v0.1.1
+        required: true
+        type: string
+      dry-run:
+        description: Pack and check without publishing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Tag matches the package version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match package.json version $version."
+            exit 1
+          fi
+      - name: Run checks
+        run: |
+          npm ci
+          npm run check
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            git status --porcelain -- dist
+            echo "::error::dist/ at $TAG does not match its sources."
+            exit 1
+          fi
+      # A prerelease (a version with a hyphen, like 0.2.0-beta.1) goes to the
+      # next dist-tag, so `latest` only ever names a stable release.
+      - name: Pick the dist-tag
+        id: dist-tag
+        run: |
+          case "$TAG" in
+            *-*) echo "tag=next" >> "$GITHUB_OUTPUT" ;;
+            *) echo "tag=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - uses: photon-hq/buildspace/.github/blocks/publish-npm@f2b0f40bb808a721d71711a4db59d234d86736a6
+        with:
+          node-version: '24'
+          tag: ${{ steps.dist-tag.outputs.tag }}
+          build-command: npm run build
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
+          npm-token: ${{ secrets.NPM_TOKEN }}
