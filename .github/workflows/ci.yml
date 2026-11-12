@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # OpenClaw installs plugins from git without running build scripts, so
+      # the compiled dist/ is committed and must match the sources.
+      - run: npm run build
+      - name: dist/ is up to date
+        run: |
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            git status --porcelain -- dist
+            echo "dist/ is out of date: run npm run build and commit it." >&2
+            exit 1
+          fi

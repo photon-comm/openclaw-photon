@@ -11,8 +11,10 @@ Text your [OpenClaw](https://github.com/openclaw/openclaw) agent from iMessage. 
 ## Installation
 
 ```bash
-openclaw plugins install github:photon-hq/openclaw-photon
+openclaw plugins install git:github.com/photon-hq/openclaw-photon
 ```
+
+OpenClaw warns that the plugin doesn't come from ClawHub and asks you to confirm. In a script, add `--force` to confirm without the prompt. To pin a release, add a tag: `git:github.com/photon-hq/openclaw-photon@v0.1.0`.
 
 ## Setup
 
@@ -105,9 +107,11 @@ To send from the agent or the CLI, address a person by phone number, with or wit
 
 ```bash
 npm install
-npm run check   # typecheck and tests
+npm run check   # typecheck, tests and build
 openclaw plugins install --link .   # load this checkout into a local OpenClaw
 ```
+
+OpenClaw installs plugins from git without running build scripts, so the compiled `dist/` folder is committed. Run `npm run build` and commit `dist/` with every source change; CI fails when it is out of date.
 
 ## License
 

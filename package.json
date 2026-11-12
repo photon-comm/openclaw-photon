@@ -24,11 +24,18 @@
   "engines": {
     "node": ">=24.22.1"
   },
+  "files": [
+    "dist/**",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "sync-manifest": "tsx scripts/sync-manifest.ts",
-    "check": "npm run typecheck && npm run test"
+    "check": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@spectrum-ts/core": "12.16.0",
@@ -87,7 +94,7 @@
             "PHOTON_PROJECT_SECRET"
           ]
         },
-        "specifier": "./configured-state.ts",
+        "specifier": "./dist/configured-state.js",
         "exportName": "hasPhotonConfiguredState"
       }
     },
