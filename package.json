@@ -1,0 +1,101 @@
+{
+  "name": "@photon-ai/openclaw-photon",
+  "version": "0.1.0",
+  "description": "Photon iMessage channel plugin for OpenClaw: reach your agent over iMessage through Photon Spectrum, no Mac required.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/photon-hq/openclaw-photon.git"
+  },
+  "homepage": "https://github.com/photon-hq/openclaw-photon#readme",
+  "bugs": {
+    "url": "https://github.com/photon-hq/openclaw-photon/issues"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "photon",
+    "spectrum",
+    "imessage",
+    "channel",
+    "messaging"
+  ],
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "sync-manifest": "tsx scripts/sync-manifest.ts",
+    "check": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@spectrum-ts/core": "12.16.0",
+    "@spectrum-ts/imessage": "12.16.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "openclaw": "2026.11.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.11.3"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "photon",
+      "label": "Photon",
+      "selectionLabel": "Photon (iMessage, no Mac)",
+      "detailLabel": "Photon iMessage",
+      "docsPath": "https://github.com/photon-hq/openclaw-photon#readme",
+      "docsLabel": "photon",
+      "blurb": "iMessage through Photon Spectrum. Sign in with Photon and get a line to text, no Mac or public URL needed.",
+      "aliases": [
+        "photon-imessage",
+        "photon-spectrum"
+      ],
+      "systemImage": "message",
+      "order": 57,
+      "quickstartAllowFrom": true,
+      "cliAddOptions": [
+        {
+          "flags": "--project-id <id>",
+          "description": "Photon Spectrum project ID"
+        },
+        {
+          "flags": "--project-secret <secret>",
+          "description": "Photon Spectrum project secret"
+        }
+      ],
+      "configuredState": {
+        "env": {
+          "allOf": [
+            "PHOTON_PROJECT_ID",
+            "PHOTON_PROJECT_SECRET"
+          ]
+        },
+        "specifier": "./configured-state.ts",
+        "exportName": "hasPhotonConfiguredState"
+      }
+    },
+    "compat": {
+      "pluginApi": ">=2026.11.3"
+    },
+    "build": {
+      "openclawVersion": "2026.11.3"
+    }
+  }
+}
