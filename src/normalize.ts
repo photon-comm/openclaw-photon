@@ -1,9 +1,11 @@
-// Photon helper module supports target/allowlist normalization behavior.
+// Photon handles, targets and allowlist entries.
+//
+// An iMessage handle on Photon is an E.164 phone number (`+15551234567`) or
+// an Apple-account email. Phone numbers lose formatting; emails are compared
+// lowercase.
 
-// Photon represents iMessage DM chat ids as `any;-;+15551234567`; the captured
-// phone addresses the same DM, so both forms normalize to the bare E.164 target.
-const DM_CHAT_GUID_RE = /^any;-;(\+\d{6,})$/;
-const E164_RE = /^\+\d{6,}$/;
+const E164_RE = /^\+[1-9]\d{6,14}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function stripPhotonPrefix(raw: string): string {
   let value = raw.trim();
@@ -16,38 +18,51 @@ function stripPhotonPrefix(raw: string): string {
   return value;
 }
 
-/** Extract the E.164 phone from a bare number or a Photon DM chat guid. */
-export function phoneTargetFromSpaceId(spaceId: string): string | null {
-  const trimmed = spaceId.trim();
-  if (E164_RE.test(trimmed)) {
-    return trimmed;
+/** `+1 (555) 123-4567` -> `+15551234567`; emails lowercase; anything else trimmed. */
+export function normalizePhotonHandle(raw: string): string {
+  const value = raw.trim();
+  if (value.includes("@")) {
+    return value.toLowerCase();
   }
-  const dmGuid = trimmed.match(DM_CHAT_GUID_RE);
-  return dmGuid ? dmGuid[1] : null;
+  if (/^\+?[\d\s().-]+$/.test(value)) {
+    const digits = value.replace(/[^\d+]/g, "");
+    return digits.startsWith("+") ? digits : `+${digits}`;
+  }
+  return value;
 }
 
-export function isPhonePhotonTarget(raw: string): boolean {
-  return E164_RE.test(stripPhotonPrefix(raw));
+export function isPhotonPhone(raw: string): boolean {
+  return E164_RE.test(raw);
 }
 
-/**
- * Normalize an outbound Photon target. Accepts bare E.164 phones, DM chat
- * guids, and opaque Spectrum space ids (group guids), with optional
- * `photon:`/`user:` prefixes.
- */
+export function isPhotonEmail(raw: string): boolean {
+  return EMAIL_RE.test(raw);
+}
+
+/** A phone number in E.164 form or an iMessage email. */
+export function isValidPhotonHandle(raw: string): boolean {
+  const value = normalizePhotonHandle(raw);
+  return isPhotonPhone(value) || isPhotonEmail(value);
+}
+
+export function isHandlePhotonTarget(raw: string): boolean {
+  return isValidPhotonHandle(stripPhotonPrefix(raw));
+}
+
+/** Normalize an outbound target: a phone or email, with optional `photon:`/`user:` prefixes. */
 export function normalizePhotonMessagingTarget(raw: string): string | undefined {
   const value = stripPhotonPrefix(raw);
-  if (!value || /\s/.test(value)) {
+  if (!value || !isValidPhotonHandle(value)) {
     return undefined;
   }
-  return phoneTargetFromSpaceId(value) ?? value;
+  return normalizePhotonHandle(value);
 }
 
 export function looksLikePhotonTargetId(raw: string): boolean {
   return normalizePhotonMessagingTarget(raw) !== undefined;
 }
 
-/** Normalize an allowlist entry to a comparable sender id (E.164 preferred). */
+/** Normalize an allowlist entry to a comparable sender handle. */
 export function normalizePhotonAllowEntry(raw: string): string {
   const value = stripPhotonPrefix(raw);
   if (!value) {
@@ -56,10 +71,10 @@ export function normalizePhotonAllowEntry(raw: string): string {
   if (value === "*") {
     return "*";
   }
-  return (phoneTargetFromSpaceId(value) ?? value).toLowerCase();
+  return normalizePhotonHandle(value);
 }
 
-/** Normalize an inbound sender id for allowlist comparison. */
+/** Normalize an inbound sender handle for allowlist comparison. */
 export function normalizePhotonSenderId(raw: string): string {
   return normalizePhotonAllowEntry(raw);
 }

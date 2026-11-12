@@ -2,10 +2,10 @@
 import { collectSimpleChannelFieldAssignments, getChannelSurface, } from "openclaw/plugin-sdk/channel-secret-basic-runtime";
 export const secretTargetRegistryEntries = [
     {
-        id: "channels.photon.projectSecret",
-        targetType: "channels.photon.projectSecret",
+        id: "channels.photon.apiKey",
+        targetType: "channels.photon.apiKey",
         configFile: "openclaw.json",
-        pathPattern: "channels.photon.projectSecret",
+        pathPattern: "channels.photon.apiKey",
         secretShape: "secret_input",
         expectedResolvedValue: "string",
         includeInPlan: true,
@@ -21,12 +21,12 @@ export function collectRuntimeConfigAssignments(params) {
     const { channel: photon, surface } = resolved;
     collectSimpleChannelFieldAssignments({
         channelKey: "photon",
-        field: "projectSecret",
+        field: "apiKey",
         channel: photon,
         surface,
         defaults: params.defaults,
         context: params.context,
-        topInactiveReason: "no enabled account inherits this top-level Photon project secret.",
+        topInactiveReason: "no enabled account inherits this top-level Photon API key.",
         accountInactiveReason: "Photon account is disabled.",
     });
 }

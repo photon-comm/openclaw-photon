@@ -1,5 +1,5 @@
 // Cheap "is Photon configured?" check OpenClaw runs before loading the plugin:
-// a project ID plus a secret, from config or from the environment.
+// a project ID plus an API key, from config or from the environment.
 type PhotonConfiguredStateParams = {
   cfg?: { channels?: Record<string, unknown> };
   env?: NodeJS.ProcessEnv;
@@ -15,7 +15,7 @@ function present(value: unknown): boolean {
 
 export function hasPhotonConfiguredState(params: PhotonConfiguredStateParams): boolean {
   const section = params.cfg?.channels?.photon as
-    | { enabled?: boolean; projectId?: unknown; projectSecret?: unknown }
+    | { enabled?: boolean; projectId?: unknown; apiKey?: unknown }
     | undefined;
   if (section?.enabled === false) {
     return false;
@@ -23,6 +23,6 @@ export function hasPhotonConfiguredState(params: PhotonConfiguredStateParams): b
   const env = params.env ?? {};
   return (
     present(section?.projectId || env.PHOTON_PROJECT_ID) &&
-    present(section?.projectSecret || env.PHOTON_PROJECT_SECRET)
+    present(section?.apiKey || env.PHOTON_API_KEY)
   );
 }

@@ -12,14 +12,14 @@ function resolveConfiguredDefaultPhotonAccountId(cfg) {
 function resolveEnvProjectId(accountId) {
     return accountId === DEFAULT_ACCOUNT_ID ? (process.env.PHOTON_PROJECT_ID?.trim() ?? "") : "";
 }
-function resolveEnvProjectSecret(accountId) {
-    return accountId === DEFAULT_ACCOUNT_ID ? (process.env.PHOTON_PROJECT_SECRET?.trim() ?? "") : "";
+function resolveEnvApiKey(accountId) {
+    return accountId === DEFAULT_ACCOUNT_ID ? (process.env.PHOTON_API_KEY?.trim() ?? "") : "";
 }
 /** List all configured Photon account ids. */
 export function listPhotonAccountIds(cfg) {
     const photonCfg = getPhotonConfig(cfg);
     const configProjectId = photonCfg?.projectId?.trim();
-    const configSecret = normalizeSecretInputString(photonCfg?.projectSecret);
+    const configSecret = normalizeSecretInputString(photonCfg?.apiKey);
     const projectId = configProjectId || process.env.PHOTON_PROJECT_ID?.trim();
     // Environment credentials only resolve for the default account, so an
     // account that leans on them must be listed under that id.
@@ -46,14 +46,15 @@ export function resolvePhotonAccount(opts) {
     const photonCfg = getPhotonConfig(opts.cfg);
     const enabled = photonCfg?.enabled !== false;
     const projectId = photonCfg?.projectId?.trim() || resolveEnvProjectId(accountId);
-    const projectSecret = normalizeSecretInputString(photonCfg?.projectSecret) || resolveEnvProjectSecret(accountId);
+    const apiKey = normalizeSecretInputString(photonCfg?.apiKey) || resolveEnvApiKey(accountId);
     return {
         accountId,
         name: normalizeOptionalString(photonCfg?.name),
         enabled,
-        configured: Boolean(projectId && projectSecret),
+        configured: Boolean(projectId && apiKey),
         projectId,
-        projectSecret,
+        apiKey,
+        legacyStableConfig: !apiKey && photonCfg?.projectSecret !== undefined,
         config: photonCfg ?? {},
     };
 }

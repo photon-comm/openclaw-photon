@@ -9,6 +9,8 @@ export const PhotonConfigSchema = z
     defaultAccount: z.string().optional(),
     enabled: z.boolean().optional(),
     projectId: z.string().optional(),
+    apiKey: buildSecretInputSchema().optional(),
+    // v0.1 (Stable) setting, ignored since v0.2; accepted so old configs load.
     projectSecret: buildSecretInputSchema().optional(),
     dmPolicy: DmPolicySchema.optional().default("pairing"),
     allowFrom: z.array(z.union([z.string(), z.number()])).optional(),

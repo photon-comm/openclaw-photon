@@ -1,7 +1,7 @@
 {
   "name": "@photon-ai/openclaw-photon",
-  "version": "0.1.1",
-  "description": "Photon iMessage channel plugin for OpenClaw: reach your agent over iMessage through Photon Spectrum, no Mac required.",
+  "version": "0.2.0",
+  "description": "Photon iMessage channel plugin for OpenClaw: reach your agent over iMessage through Photon, no Mac required.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -16,7 +16,6 @@
     "openclaw",
     "openclaw-plugin",
     "photon",
-    "spectrum",
     "imessage",
     "channel",
     "messaging"
@@ -38,8 +37,8 @@
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "@spectrum-ts/core": "12.16.0",
-    "@spectrum-ts/imessage": "12.16.0",
+    "@photon-ai/api": "0.6.0",
+    "socket.io-client": "4.8.4",
     "zod": "4.6.5"
   },
   "devDependencies": {
@@ -73,10 +72,9 @@
       "detailLabel": "Photon iMessage",
       "docsPath": "https://github.com/photon-hq/openclaw-photon#readme",
       "docsLabel": "photon",
-      "blurb": "iMessage through Photon Spectrum. Sign in with Photon and get a line to text, no Mac or public URL needed.",
+      "blurb": "iMessage through Photon. Sign in with Photon and get a line to text, no Mac or public URL needed.",
       "aliases": [
-        "photon-imessage",
-        "photon-spectrum"
+        "photon-imessage"
       ],
       "systemImage": "message",
       "order": 57,
@@ -84,18 +82,18 @@
       "cliAddOptions": [
         {
           "flags": "--project-id <id>",
-          "description": "Photon Spectrum project ID"
+          "description": "Photon project ID (pho_prj_...)"
         },
         {
-          "flags": "--project-secret <secret>",
-          "description": "Photon Spectrum project secret"
+          "flags": "--api-key <key>",
+          "description": "Photon project API key (pho_sk_...)"
         }
       ],
       "configuredState": {
         "env": {
           "allOf": [
             "PHOTON_PROJECT_ID",
-            "PHOTON_PROJECT_SECRET"
+            "PHOTON_API_KEY"
           ]
         },
         "specifier": "./dist/configured-state.js",

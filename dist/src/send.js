@@ -1,10 +1,14 @@
-// Photon plugin module implements send behavior.
+// Outbound sends: agent replies, `openclaw message send`, pairing notices.
+import { basename } from "node:path";
 import { createMessageReceiptFromOutboundResults, } from "openclaw/plugin-sdk/channel-outbound";
+import { loadOutboundMediaFromUrl } from "openclaw/plugin-sdk/outbound-media";
 import { requireRuntimeConfig } from "openclaw/plugin-sdk/plugin-config-runtime";
+import { stripMarkdown } from "openclaw/plugin-sdk/text-chunking";
 import { getActivePhotonClient, PhotonClient } from "./client.js";
 import { normalizePhotonMessagingTarget } from "./normalize.js";
 import { getPhotonRuntime } from "./runtime.js";
 import { resolvePhotonAccount } from "./types.js";
+const DEFAULT_MEDIA_MAX_MB = 20;
 function recordPhotonOutboundActivity(accountId) {
     try {
         getPhotonRuntime().channel.activity.record({
@@ -19,62 +23,110 @@ function recordPhotonOutboundActivity(accountId) {
         }
     }
 }
-// iMessage has no table rendering; follow the channel's markdown.tables
-// setting when the runtime is available (it is in the gateway and CLI).
-function preparePhotonText(text, cfg, accountId) {
-    const trimmed = text.trim();
-    if (!trimmed) {
-        return trimmed;
+/**
+ * Photon Beta sends iMessage text as plain text, so Markdown is flattened:
+ * tables follow the channel's markdown.tables setting, then the rest of the
+ * syntax is removed.
+ */
+export function preparePhotonText(text, cfg, accountId) {
+    let prepared = text.trim();
+    if (!prepared) {
+        return prepared;
     }
     try {
         const textRuntime = getPhotonRuntime().channel.text;
         const mode = textRuntime.resolveMarkdownTableMode({ cfg, channel: "photon", accountId });
-        return textRuntime.convertMarkdownTables(trimmed, mode);
+        prepared = textRuntime.convertMarkdownTables(prepared, mode);
     }
     catch {
-        return trimmed;
+        // No runtime (unit tests): keep the tables as they are.
     }
+    return stripMarkdown(prepared).trim();
+}
+const EXTENSIONS = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/heic": ".heic",
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a",
+    "application/pdf": ".pdf",
+};
+function fileNameFor(mediaUrl, contentType, given) {
+    const fromUrl = (() => {
+        try {
+            return basename(new URL(mediaUrl).pathname);
+        }
+        catch {
+            return basename(mediaUrl);
+        }
+    })();
+    const name = (given || fromUrl || "attachment").replace(/[^\w.-]+/g, "_").slice(-80) || "attachment";
+    return /\.[A-Za-z0-9]{1,5}$/.test(name) ? name : `${name}${EXTENSIONS[contentType] ?? ""}`;
+}
+async function loadPhotonMedia(mediaUrl, opts, maxBytes) {
+    const loaded = await loadOutboundMediaFromUrl(mediaUrl, {
+        maxBytes,
+        mediaAccess: opts.mediaAccess,
+        mediaLocalRoots: opts.mediaLocalRoots,
+        mediaReadFile: opts.mediaReadFile,
+    });
+    const contentType = loaded.contentType || "application/octet-stream";
+    return {
+        buffer: loaded.buffer,
+        contentType,
+        fileName: fileNameFor(mediaUrl, contentType, loaded.fileName),
+    };
 }
 async function withPhotonClient(params, run) {
-    const active = getActivePhotonClient(params.accountId);
-    if (active) {
-        return await run(active);
-    }
-    // No gateway monitor running (for example one-off CLI sends): open a
-    // transient connection and close it after the send.
-    const transient = await PhotonClient.connect({
-        projectId: params.projectId,
-        projectSecret: params.projectSecret,
-    });
-    try {
-        return await run(transient);
-    }
-    finally {
-        await transient.stop().catch(() => { });
-    }
+    // The gateway's client knows the conversations already; a one-off CLI send
+    // without a running gateway looks them up.
+    const client = getActivePhotonClient(params.accountId) ??
+        new PhotonClient({
+            accountId: params.accountId,
+            projectId: params.projectId,
+            apiKey: params.apiKey,
+        });
+    return await run(client);
 }
 export async function sendMessagePhoton(to, text, opts) {
     const cfg = requireRuntimeConfig(opts.cfg, "Photon send");
     const account = resolvePhotonAccount({ cfg, accountId: opts.accountId });
     if (!account.configured) {
-        throw new Error(`Photon is not configured for account "${account.accountId}" (need projectId and projectSecret in channels.photon).`);
+        throw new Error(`Photon is not configured for account "${account.accountId}" (need projectId and apiKey in channels.photon).`);
     }
     const target = normalizePhotonMessagingTarget(to);
     if (!target) {
-        throw new Error(`Invalid Photon target: ${to}`);
+        throw new Error(`Invalid Photon target: ${to} (use a phone number like +15551234567 or an iMessage email)`);
     }
     const prepared = preparePhotonText(text, cfg, account.accountId);
     const mediaUrl = opts.mediaUrl?.trim();
     if (!prepared && !mediaUrl) {
         throw new Error("Message must include text or media for Photon sends");
     }
-    const result = await withPhotonClient({
-        accountId: account.accountId,
-        projectId: account.projectId,
-        projectSecret: account.projectSecret,
-    }, async (client) => mediaUrl
-        ? await client.sendMedia(target, { url: mediaUrl }, prepared || undefined)
-        : await client.sendText(target, prepared));
+    const maxBytes = Math.max(account.config.mediaMaxMb ?? DEFAULT_MEDIA_MAX_MB, 1) * 1024 * 1024;
+    const result = await withPhotonClient({ accountId: account.accountId, projectId: account.projectId, apiKey: account.apiKey }, async (client) => {
+        if (!mediaUrl) {
+            return await client.sendText(target, prepared);
+        }
+        const file = await loadPhotonMedia(mediaUrl, opts, maxBytes);
+        const sent = await client.sendFile(target, file);
+        // The caption goes after the image as its own bubble.
+        if (prepared) {
+            try {
+                await client.sendText(target, prepared);
+            }
+            catch (err) {
+                // The attachment is already delivered; failing here would invite a
+                // retry that sends it twice.
+                console.warn(`photon: caption send failed after media delivery: ${String(err)}`);
+            }
+        }
+        return sent;
+    });
     recordPhotonOutboundActivity(account.accountId);
     const messageId = result.messageId ?? `photon-${Date.now()}`;
     return {

@@ -12,5 +12,5 @@ export function hasPhotonConfiguredState(params) {
     }
     const env = params.env ?? {};
     return (present(section?.projectId || env.PHOTON_PROJECT_ID) &&
-        present(section?.projectSecret || env.PHOTON_PROJECT_SECRET));
+        present(section?.apiKey || env.PHOTON_API_KEY));
 }

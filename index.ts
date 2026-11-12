@@ -6,7 +6,7 @@ import { setPhotonRuntime } from "./src/runtime.js";
 export default defineChannelPluginEntry({
   id: "photon",
   name: "Photon",
-  description: "iMessage channel for OpenClaw through Photon Spectrum",
+  description: "iMessage channel for OpenClaw through Photon",
   plugin: photonPlugin,
   setRuntime: setPhotonRuntime,
 });
