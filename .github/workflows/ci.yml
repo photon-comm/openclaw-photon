@@ -31,3 +31,11 @@ jobs:
             echo "dist/ is out of date: run npm run build and commit it." >&2
             exit 1
           fi
+      # npm and ClawHub install the packed tarball, not the checkout, so check
+      # the tarball the way ClawHub does before it publishes a release.
+      - name: Package passes ClawHub validation
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack"
+          tar -xzf "$RUNNER_TEMP"/pack/*.tgz -C "$RUNNER_TEMP/pack"
+          npx --yes clawhub@0.25.1 package validate "$RUNNER_TEMP/pack/package"

@@ -1,0 +1,77 @@
+name: Release to ClawHub
+
+# Publishes a release to ClawHub as @photon-ai/openclaw-photon, owned by the
+# photon-ai publisher. Run it by hand with the tag after the npm release.
+#
+# ClawHub trusts this workflow file for the package (trusted publishing), so it
+# needs no token. ClawHub only accepts trusted publishing on manual runs, which
+# is why this one isn't triggered by the GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, such as v0.1.1
+        required: true
+        type: string
+      dry-run:
+        description: Validate and preview without publishing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-clawhub
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Tag matches the package version
+        id: tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match package.json version $version."
+            exit 1
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      # dist/ is committed and CI keeps it in step with the sources, so the
+      # tarball is packed as the tag has it, the same files npm ships.
+      - name: Pack
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clawpack
+          path: ${{ runner.temp }}/pack/*.tgz
+          if-no-files-found: error
+
+  publish:
+    needs: pack
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@8f894fe8ed286ff8d30831694990ad37718d25bb
+    with:
+      owner: photon-ai
+      package_artifact_name: clawpack
+      source_repo: ${{ github.repository }}
+      source_commit: ${{ needs.pack.outputs.sha }}
+      source_ref: refs/tags/${{ inputs.tag }}
+      dry_run: ${{ inputs.dry-run }}
