@@ -33,6 +33,12 @@ export type PhotonEventSubscriptionOptions = {
 };
 
 const SUBSCRIBE_TIMEOUT_MS = 10_000;
+/**
+ * The event payload contract `parsePhotonInbound` reads. Pinned so a change to
+ * the server's default can't reshape events under a running gateway; Photon
+ * asks for it again on every subscribe.
+ */
+export const PHOTON_EVENTS_API_VERSION = "2026-07-01";
 
 export function subscribePhotonEvents(opts: PhotonEventSubscriptionOptions): PhotonEventSubscription {
   const connect = opts.connect ?? io;
@@ -76,7 +82,7 @@ export function subscribePhotonEvents(opts: PhotonEventSubscriptionOptions): Pho
       .timeout(SUBSCRIBE_TIMEOUT_MS)
       .emit(
         "subscribe",
-        { startSeq },
+        { startSeq, apiVersion: PHOTON_EVENTS_API_VERSION },
         (
           err: unknown,
           result: { ok?: boolean; error?: unknown; connectionId?: string; apiVersion?: string; startSeq?: unknown },

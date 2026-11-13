@@ -4,6 +4,12 @@
 // so events sent while the gateway was down arrive when it reconnects.
 import { io } from "socket.io-client";
 const SUBSCRIBE_TIMEOUT_MS = 10_000;
+/**
+ * The event payload contract `parsePhotonInbound` reads. Pinned so a change to
+ * the server's default can't reshape events under a running gateway; Photon
+ * asks for it again on every subscribe.
+ */
+export const PHOTON_EVENTS_API_VERSION = "2026-07-01";
 export function subscribePhotonEvents(opts) {
     const connect = opts.connect ?? io;
     const socket = connect(opts.origin, {
@@ -42,7 +48,7 @@ export function subscribePhotonEvents(opts) {
         const startSeq = opts.cursor();
         socket
             .timeout(SUBSCRIBE_TIMEOUT_MS)
-            .emit("subscribe", { startSeq }, (err, result) => {
+            .emit("subscribe", { startSeq, apiVersion: PHOTON_EVENTS_API_VERSION }, (err, result) => {
             if (current !== generation || stopped) {
                 return;
             }

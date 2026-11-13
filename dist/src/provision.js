@@ -1,6 +1,7 @@
 // Setup-time calls to Photon Beta, made with the person's own sign-in:
 //   - device login (RFC 8628), the same flow as `photon login` in the CLI
-//   - pick the organization and project, or create the project
+//   - pick the organization and project, or create the project, and wait
+//     until Photon has set up its billing
 //   - create a project API key for the gateway
 //   - give the person a line: a shared-line assignment for their handle, or
 //     the project's dedicated line
@@ -18,6 +19,10 @@ export const PHOTON_GATEWAY_KEY_PERMISSIONS = ["project:read", "project:write", 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_POLL_INTERVAL_S = 5;
 const DEFAULT_EXPIRES_IN_S = 900;
+// A new project answers 202 while its billing is set up; Photon asks for a
+// GET every Retry-After (2 seconds) until that settles.
+const PROJECT_BILLING_POLL_MS = 2_000;
+const PROJECT_BILLING_TIMEOUT_MS = 120_000;
 async function client(token, deps) {
     const { Photon } = await import("@photon-ai/api");
     return new Photon({
@@ -117,7 +122,11 @@ export async function listPhotonProjects(token, organizationId, deps) {
         });
         for (const project of page.projects) {
             if (!project.deletedAt) {
-                projects.push({ projectId: project.projectId, name: project.name });
+                projects.push({
+                    projectId: project.projectId,
+                    name: project.name,
+                    ready: photonBillingSettled(project.billingInitialization),
+                });
             }
         }
         pageToken = page.nextPageToken;
@@ -133,6 +142,34 @@ export function photonProjectSlug(name, suffix = randomBytes(3).toString("hex"))
         .slice(0, 50) || "openclaw";
     return `${base}-${suffix}`;
 }
+/**
+ * Whether a project's billing is set up. `pending` and `retry_required` mean
+ * Photon is still working on it; until then line settings and assignments
+ * answer 503. A project without the field is ready.
+ */
+export function photonBillingSettled(state) {
+    return state !== "pending" && state !== "retry_required";
+}
+async function waitForPhotonBilling(photon, projectId, initial, deps) {
+    const { sleep, now } = resolveDeps(deps);
+    const deadline = now() + PROJECT_BILLING_TIMEOUT_MS;
+    let state = initial;
+    while (!photonBillingSettled(state)) {
+        if (now() >= deadline) {
+            throw new Error(`Photon is still setting up project ${projectId}. Wait a minute, then run setup again and pick the project from the list.`);
+        }
+        await sleep(PROJECT_BILLING_POLL_MS);
+        const project = await photon.projects.get({ path: { projectId } });
+        state = project.billingInitialization;
+    }
+}
+/** Wait until Photon has finished setting up an existing project. */
+export async function waitForPhotonProject(token, projectId, deps) {
+    const photon = await client(token, deps);
+    const project = await photon.projects.get({ path: { projectId } });
+    await waitForPhotonBilling(photon, projectId, project.billingInitialization, deps);
+}
+/** Create the project and return once Photon has set it up. */
 export async function createPhotonProject(token, organizationId, name, deps) {
     const photon = await client(token, deps);
     const project = await photon.organizations.projects.create({
@@ -140,7 +177,8 @@ export async function createPhotonProject(token, organizationId, name, deps) {
         headers: { idempotencyKey: `openclaw-project:${randomUUID()}` },
         body: { name, slug: photonProjectSlug(name) },
     });
-    return { projectId: project.projectId, name: project.name };
+    await waitForPhotonBilling(photon, project.projectId, project.billingInitialization, deps);
+    return { projectId: project.projectId, name: project.name, ready: true };
 }
 /** A project API key for the gateway; the secret is only returned here. */
 export async function createPhotonGatewayKey(token, projectId, deps) {
