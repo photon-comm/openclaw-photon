@@ -3,7 +3,7 @@ import { hasConfiguredSecretInput, normalizeSecretInputString, } from "openclaw/
 import { createStandardChannelSetupStatus, createTopLevelChannelDmPolicy, createTopLevelChannelParsedAllowFromPrompt, mergeAllowFromEntries, parseSetupEntriesWithParser, patchTopLevelChannelConfigSection, } from "openclaw/plugin-sdk/setup";
 import { isHandlePhotonTarget, isValidPhotonHandle, normalizePhotonAllowEntry, normalizePhotonHandle } from "./normalize.js";
 import { PHOTON_DASHBOARD_URL } from "./origin.js";
-import { createPhotonGatewayKey, createPhotonProject, DEFAULT_PHOTON_PROJECT_NAME, describeProvisionError, ensurePhotonSharedLine, getPhotonImessageMode, listPhotonDedicatedLines, listPhotonOrganizations, listPhotonProjects, pollPhotonDeviceToken, requestPhotonDeviceCode, } from "./provision.js";
+import { createPhotonGatewayKey, createPhotonProject, DEFAULT_PHOTON_PROJECT_NAME, describeProvisionError, ensurePhotonSharedLine, getPhotonImessageMode, listPhotonDedicatedLines, listPhotonOrganizations, listPhotonProjects, pollPhotonDeviceToken, requestPhotonDeviceCode, waitForPhotonProject, } from "./provision.js";
 import { t } from "./setup-strings.js";
 import { resolveDefaultPhotonAccountId, resolvePhotonAccount } from "./types.js";
 const DOCS_URL = "https://github.com/photon-hq/openclaw-photon#readme";
@@ -100,12 +100,15 @@ async function choosePhotonProject(prompter, token) {
     }
     const existing = projects.find((project) => project.projectId === choice);
     if (existing) {
+        if (existing.ready === false) {
+            await withProgress(prompter, t("wizard.photon.preparingProject"), () => waitForPhotonProject(token, existing.projectId));
+        }
         return existing;
     }
     return await withProgress(prompter, t("wizard.photon.creatingProject"), () => createPhotonProject(token, organizationId, DEFAULT_PHOTON_PROJECT_NAME));
 }
 /** Give the person a line to text, and say which. Never fails the setup. */
-async function preparePhotonLine(prompter, token, project) {
+export async function preparePhotonLine(prompter, token, project) {
     const mode = await getPhotonImessageMode(token, project.projectId).catch(() => ({ mode: "unknown" }));
     const entered = (await prompter.text({
         message: t("wizard.photon.handlePrompt"),
@@ -119,6 +122,11 @@ async function preparePhotonLine(prompter, token, project) {
         lines.push(dedicated.length > 0
             ? t("wizard.photon.dedicatedLine", { line: dedicated.join(", ") })
             : t("wizard.photon.dedicatedLineMissing", { url: PHOTON_DASHBOARD_URL }));
+    }
+    else if (mode.mode === "unknown") {
+        // Without the line settings this could be a dedicated-line project, so
+        // don't spend a shared seat on a guess.
+        lines.push(t("wizard.photon.lineModeUnknown", { url: PHOTON_DASHBOARD_URL }));
     }
     else if (!handle) {
         lines.push(t("wizard.photon.noHandleAdded", { url: PHOTON_DASHBOARD_URL }));

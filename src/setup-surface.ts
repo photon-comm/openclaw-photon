@@ -30,6 +30,7 @@ import {
   listPhotonProjects,
   pollPhotonDeviceToken,
   requestPhotonDeviceCode,
+  waitForPhotonProject,
   type PhotonProjectSummary,
 } from "./provision.js";
 import { t } from "./setup-strings.js";
@@ -157,6 +158,11 @@ async function choosePhotonProject(
   }
   const existing = projects.find((project) => project.projectId === choice);
   if (existing) {
+    if (existing.ready === false) {
+      await withProgress(prompter, t("wizard.photon.preparingProject"), () =>
+        waitForPhotonProject(token, existing.projectId),
+      );
+    }
     return existing;
   }
   return await withProgress(prompter, t("wizard.photon.creatingProject"), () =>
@@ -165,7 +171,7 @@ async function choosePhotonProject(
 }
 
 /** Give the person a line to text, and say which. Never fails the setup. */
-async function preparePhotonLine(
+export async function preparePhotonLine(
   prompter: WizardPrompter,
   token: string,
   project: PhotonProjectSummary,
@@ -189,6 +195,10 @@ async function preparePhotonLine(
         ? t("wizard.photon.dedicatedLine", { line: dedicated.join(", ") })
         : t("wizard.photon.dedicatedLineMissing", { url: PHOTON_DASHBOARD_URL }),
     );
+  } else if (mode.mode === "unknown") {
+    // Without the line settings this could be a dedicated-line project, so
+    // don't spend a shared seat on a guess.
+    lines.push(t("wizard.photon.lineModeUnknown", { url: PHOTON_DASHBOARD_URL }));
   } else if (!handle) {
     lines.push(t("wizard.photon.noHandleAdded", { url: PHOTON_DASHBOARD_URL }));
   } else {

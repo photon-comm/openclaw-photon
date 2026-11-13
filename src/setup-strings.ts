@@ -22,6 +22,7 @@ const STRINGS = {
   "wizard.photon.projectPrompt": "Photon project for this gateway",
   "wizard.photon.createProjectOption": "Create a new project named {name}",
   "wizard.photon.creatingProject": "Creating the project",
+  "wizard.photon.preparingProject": "Waiting for Photon to finish setting up the project",
   "wizard.photon.creatingKey": "Creating an API key for the gateway",
   "wizard.photon.handlePrompt":
     "The phone number (like +15551234567) or iMessage email you will text the agent from. Leave empty to skip.",
@@ -36,6 +37,8 @@ const STRINGS = {
     "This project uses dedicated lines but has none yet. Add one under iMessage at {url}, then text it.",
   "wizard.photon.noHandleAdded":
     "No number added. Add the number or email you'll text from under iMessage in your project at {url}, or run setup again.",
+  "wizard.photon.lineModeUnknown":
+    "Couldn't read this project's iMessage line settings, so no line was assigned. The project and key are saved; check iMessage at {url}, or run setup again.",
   "wizard.photon.assignFailed":
     "Couldn't assign you a line ({error}). The project and key are saved; assign one under iMessage at {url}, or run setup again.",
   "wizard.photon.allowlistTitle": "Who can message the agent",
