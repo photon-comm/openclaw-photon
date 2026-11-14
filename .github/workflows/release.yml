@@ -1,19 +1,21 @@
 name: Release to npm
 
-# Publishes a release to npm as @photon-comm/openclaw-photon. Publishing a GitHub
+# Publishes a release to npm as @photon-ai/openclaw-photon. Publishing a GitHub
 # Release runs it; run it by hand with the tag to retry one.
 #
 # BuildSpace's publish-npm block tries npm trusted publishing (OIDC) first and
 # falls back to the organization's NPM_TOKEN. Once a trusted publisher for this
 # workflow is set up on npmjs.com, releases publish without the token and with
-# provenance, with no change here.
+# provenance, with no change here. npm only takes a trusted publisher for a
+# package that exists, so the first version is published by hand by a member of
+# the @photon-ai npm org (see Releasing in the README).
 on:
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish, such as v0.2.1
+        description: Release tag to publish, such as v0.2.2
         required: true
         type: string
       dry-run:
