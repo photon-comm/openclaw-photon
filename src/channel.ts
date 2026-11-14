@@ -37,7 +37,7 @@ const meta = {
   // Keep in sync with `openclaw.channel` in package.json, which OpenClaw reads
   // before the plugin loads.
   selectionLabel: "Photon (iMessage, no Mac)",
-  docsPath: "https://github.com/photon-hq/openclaw-photon#readme",
+  docsPath: "https://github.com/photon-comm/openclaw-photon#readme",
   docsLabel: "photon",
   blurb:
     "iMessage through Photon. Sign in with Photon and get a line to text, no Mac or public URL needed.",

@@ -2,7 +2,7 @@
 
 Text your [OpenClaw](https://github.com/openclaw/openclaw) agent from iMessage. This channel plugin connects OpenClaw to a [Photon](https://photon.codes) iMessage line: no Mac, no Apple ID to sign in, and no public URL or webhook. The gateway opens one outbound connection to Photon's event stream and receives messages over it, so it works on a laptop or a server behind NAT.
 
-Since v0.2 the plugin runs on Photon Beta (2.0): the Photon API at `api.photon.codes`, a project ID (`pho_prj_...`) and a project API key (`pho_sk_...`). For Photon Stable (Spectrum project ID and secret), use [v0.1.1](https://github.com/photon-hq/openclaw-photon/tree/v0.1.1).
+Since v0.2 the plugin runs on Photon Beta (2.0): the Photon API at `api.photon.codes`, a project ID (`pho_prj_...`) and a project API key (`pho_sk_...`). For Photon Stable (Spectrum project ID and secret), use [v0.1.1](https://github.com/photon-comm/openclaw-photon/tree/v0.1.1).
 
 ## Requirements
 
@@ -13,10 +13,10 @@ Since v0.2 the plugin runs on Photon Beta (2.0): the Photon API at `api.photon.c
 ## Installation
 
 ```bash
-openclaw plugins install git:github.com/photon-hq/openclaw-photon
+openclaw plugins install git:github.com/photon-comm/openclaw-photon
 ```
 
-OpenClaw asks two questions: whether to install a plugin that doesn't come from ClawHub, and whether to grant its capabilities (the Photon channel; no access to other conversations). Answer `y` to both. In a script, pass `--force --accept-capabilities` instead. To pin a release, add its tag: `git:github.com/photon-hq/openclaw-photon@v0.2.0`.
+OpenClaw asks two questions: whether to install a plugin that doesn't come from ClawHub, and whether to grant its capabilities (the Photon channel; no access to other conversations). Answer `y` to both. In a script, pass `--force --accept-capabilities` instead. To pin a release, add its tag: `git:github.com/photon-comm/openclaw-photon@v0.2.1`.
 
 ## Setup
 
@@ -115,7 +115,7 @@ For example: `openclaw message send --channel photon --target +15551234567 --med
 
 ### Upgrading from v0.1
 
-v0.1 ran on Photon Stable with a Spectrum project ID and secret, which v0.2 can't use. Run `openclaw configure --section channels` again and sign in: setup saves a Beta project ID and API key and removes the old `projectSecret`. Until then, `openclaw channels status` shows the account as not configured and says why. To stay on Stable, install `git:github.com/photon-hq/openclaw-photon@v0.1.1`.
+v0.1 ran on Photon Stable with a Spectrum project ID and secret, which v0.2 can't use. Run `openclaw configure --section channels` again and sign in: setup saves a Beta project ID and API key and removes the old `projectSecret`. Until then, `openclaw channels status` shows the account as not configured and says why. To stay on Stable, install `git:github.com/photon-comm/openclaw-photon@v0.1.1`.
 
 ## Development
 
@@ -132,8 +132,8 @@ OpenClaw installs plugins from git without running build scripts, so the compile
 ### Releasing
 
 1. Raise `version` in `package.json`, run `npm install --package-lock-only` and `npm run build`, and merge.
-2. Publish a GitHub release tagged `v` plus that version (for example `v0.2.0`). The **Release to npm** workflow publishes it to npm.
-3. Run **Release to ClawHub** with the same tag: `gh workflow run clawhub.yml -f tag=v0.2.0`.
+2. Publish a GitHub release tagged `v` plus that version (for example `v0.2.1`). The **Release to npm** workflow publishes it to npm.
+3. Run **Release to ClawHub** with the same tag: `gh workflow run clawhub.yml -f tag=v0.2.1`.
 
 ## License
 

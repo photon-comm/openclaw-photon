@@ -1,7 +1,7 @@
 name: Release to ClawHub
 
-# Publishes a release to ClawHub as @photon-ai/openclaw-photon, owned by the
-# photon-ai publisher. Run it by hand with the tag after the npm release.
+# Publishes a release to ClawHub as @photon-comm/openclaw-photon, owned by the
+# photon-comm publisher. Run it by hand with the tag after the npm release.
 #
 # ClawHub trusts this workflow file for the package (trusted publishing), so it
 # needs no token. ClawHub only accepts trusted publishing on manual runs, which
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish, such as v0.1.1
+        description: Release tag to publish, such as v0.2.1
         required: true
         type: string
       dry-run:
@@ -75,7 +75,7 @@ jobs:
       id-token: write
     uses: openclaw/clawhub/.github/workflows/package-publish.yml@8f894fe8ed286ff8d30831694990ad37718d25bb
     with:
-      owner: photon-ai
+      owner: photon-comm
       package_artifact_name: clawpack
       source_repo: ${{ github.repository }}
       source_commit: ${{ needs.pack.outputs.sha }}
