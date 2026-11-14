@@ -142,6 +142,8 @@ Both workflows publish through trusted publishing, which npm and ClawHub only se
 - **npm**, logged in as a member of the `@photon-ai` npm org: `npm ci && npm run check && npm publish --access public`. Then, in the package's settings on npmjs.com, add a trusted publisher: GitHub repository `photon-comm/openclaw-photon`, workflow `release.yml`.
 - **ClawHub**, signed in with `clawhub login` as a member of the `photon-ai` publisher (ClawHub only accepts a scoped package from the publisher of the same name): `clawhub package publish . --owner photon-ai`. Then `clawhub package trusted-publisher set @photon-ai/openclaw-photon --repository photon-comm/openclaw-photon --workflow-filename clawhub.yml`.
 
+A version published by hand is already on the registry, so a workflow run for it fails; the workflows take over from the next version.
+
 ## License
 
 MIT
