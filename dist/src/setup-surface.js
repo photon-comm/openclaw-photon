@@ -6,7 +6,7 @@ import { PHOTON_DASHBOARD_URL } from "./origin.js";
 import { createPhotonGatewayKey, createPhotonProject, DEFAULT_PHOTON_PROJECT_NAME, describeProvisionError, ensurePhotonSharedLine, getPhotonImessageMode, listPhotonDedicatedLines, listPhotonOrganizations, listPhotonProjects, pollPhotonDeviceToken, requestPhotonDeviceCode, waitForPhotonProject, } from "./provision.js";
 import { t } from "./setup-strings.js";
 import { resolveDefaultPhotonAccountId, resolvePhotonAccount } from "./types.js";
-const DOCS_URL = "https://github.com/photon-hq/openclaw-photon#readme";
+const DOCS_URL = "https://github.com/photon-comm/openclaw-photon#readme";
 const channel = "photon";
 // Set after a successful sign-in run so the manual project-id/API-key prompts
 // are skipped for this wizard pass.

@@ -1,16 +1,16 @@
 {
-  "name": "@photon-ai/openclaw-photon",
-  "version": "0.2.0",
+  "name": "@photon-comm/openclaw-photon",
+  "version": "0.2.1",
   "description": "Photon iMessage channel plugin for OpenClaw: reach your agent over iMessage through Photon, no Mac required.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/photon-hq/openclaw-photon.git"
+    "url": "git+https://github.com/photon-comm/openclaw-photon.git"
   },
-  "homepage": "https://github.com/photon-hq/openclaw-photon#readme",
+  "homepage": "https://github.com/photon-comm/openclaw-photon#readme",
   "bugs": {
-    "url": "https://github.com/photon-hq/openclaw-photon/issues"
+    "url": "https://github.com/photon-comm/openclaw-photon/issues"
   },
   "keywords": [
     "openclaw",
@@ -70,7 +70,7 @@
       "label": "Photon",
       "selectionLabel": "Photon (iMessage, no Mac)",
       "detailLabel": "Photon iMessage",
-      "docsPath": "https://github.com/photon-hq/openclaw-photon#readme",
+      "docsPath": "https://github.com/photon-comm/openclaw-photon#readme",
       "docsLabel": "photon",
       "blurb": "iMessage through Photon. Sign in with Photon and get a line to text, no Mac or public URL needed.",
       "aliases": [

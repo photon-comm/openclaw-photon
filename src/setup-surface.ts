@@ -36,7 +36,7 @@ import {
 import { t } from "./setup-strings.js";
 import { resolveDefaultPhotonAccountId, resolvePhotonAccount, type CoreConfig } from "./types.js";
 
-const DOCS_URL = "https://github.com/photon-hq/openclaw-photon#readme";
+const DOCS_URL = "https://github.com/photon-comm/openclaw-photon#readme";
 
 const channel = "photon" as const;
 // Set after a successful sign-in run so the manual project-id/API-key prompts
