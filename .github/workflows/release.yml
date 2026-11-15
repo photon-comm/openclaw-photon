@@ -71,10 +71,24 @@ jobs:
             *-*) echo "tag=next" >> "$GITHUB_OUTPUT" ;;
             *) echo "tag=latest" >> "$GITHUB_OUTPUT" ;;
           esac
-      - uses: photon-hq/buildspace/.github/blocks/publish-npm@f2b0f40bb808a721d71711a4db59d234d86736a6
+      # The block checks the registry for about 30 seconds after publishing (6
+      # reads, 5 seconds apart), and npm can take a few minutes to show a new
+      # version, so a publish that worked can still fail the block, as v0.2.3
+      # did. The next step decides from the registry instead.
+      - id: publish
+        uses: photon-hq/buildspace/.github/blocks/publish-npm@f2b0f40bb808a721d71711a4db59d234d86736a6
+        continue-on-error: true
         with:
           node-version: '24'
           tag: ${{ steps.dist-tag.outputs.tag }}
           build-command: npm run build
           dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
           npm-token: ${{ secrets.NPM_TOKEN }}
+      # Passes only for this version published from this commit through trusted
+      # publishing, so a failed publish (or a hand publish) still fails the run.
+      - name: Version is on npm from this tag
+        if: steps.publish.outcome != 'success'
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
+          NODE_AUTH_TOKEN: ''
+        run: bash scripts/check-npm-release.sh

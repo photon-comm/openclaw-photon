@@ -155,7 +155,7 @@ The package is `@photon-ai/openclaw` on npm and on ClawHub.
 
 1. Raise `version` in `package.json`, add it to `CHANGELOG.md`, run `npm install --package-lock-only` and `npm run build`, and merge.
 2. Publish a GitHub release tagged `v` plus that version (for example `v0.2.3`). The **Release to npm** workflow publishes it to npm.
-3. Run **Release to ClawHub** with the same tag: `gh workflow run clawhub.yml -f tag=v0.2.3`.
+3. Run **Release to ClawHub** on the same tag: `gh workflow run clawhub.yml --ref v0.2.3 -f tag=v0.2.3`. ClawHub refuses a trusted publish from a run started on another ref, such as `main`.
 
 Both workflows publish through trusted publishing, which npm and ClawHub only set up for a package that already exists. Until then, publish from a clean checkout of the tag by hand:
 
