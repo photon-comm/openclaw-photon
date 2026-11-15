@@ -1,6 +1,6 @@
 name: Release to npm
 
-# Publishes a release to npm as @photon-ai/openclaw-photon. Publishing a GitHub
+# Publishes a release to npm as @photon-ai/openclaw. Publishing a GitHub
 # Release runs it; run it by hand with the tag to retry one.
 #
 # BuildSpace's publish-npm block tries npm trusted publishing (OIDC) first and

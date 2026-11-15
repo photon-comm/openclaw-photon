@@ -1,5 +1,5 @@
 {
-  "name": "@photon-ai/openclaw-photon",
+  "name": "@photon-ai/openclaw",
   "version": "0.2.2",
   "description": "Photon iMessage channel plugin for OpenClaw: reach your agent over iMessage through Photon, no Mac required.",
   "license": "MIT",

@@ -1,6 +1,6 @@
 name: Release to ClawHub
 
-# Publishes a release to ClawHub as @photon-ai/openclaw-photon. Run it by hand
+# Publishes a release to ClawHub as @photon-ai/openclaw. Run it by hand
 # with the tag after the npm release.
 #
 # ClawHub trusts this workflow file for the package (trusted publishing), so it
