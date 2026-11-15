@@ -2,6 +2,9 @@
 // iMessage. Pure, so it is easy to test against recorded payloads.
 import type { PhotonEvent } from "./events.js";
 
+/** An attachment on an inbound message, not yet downloaded. */
+export type PhotonInboundAttachment = { attachmentId: string; kind: "attachment" | "voice" };
+
 export type PhotonInboundEvent = {
   messageId: string;
   /** Sender handle: E.164 phone or iMessage email. */
@@ -12,7 +15,7 @@ export type PhotonInboundEvent = {
   agentHandle?: string;
   direct: boolean;
   text: string;
-  attachments: Array<{ attachmentId: string; kind: "attachment" | "voice" }>;
+  attachments: PhotonInboundAttachment[];
   /** Content types this plugin can't pass on, for a text marker. */
   unsupported: string[];
   timestamp: number;
@@ -57,7 +60,7 @@ export function parsePhotonInbound(event: PhotonEvent): PhotonInboundEvent | nul
   const parts: Part[] =
     content.type === "group" && Array.isArray(content.parts) ? (content.parts as Part[]) : [content];
   const texts: string[] = [];
-  const attachments: PhotonInboundEvent["attachments"] = [];
+  const attachments: PhotonInboundAttachment[] = [];
   const unsupported: string[] = [];
   for (const part of parts) {
     const type = str(part.type) ?? "unknown";

@@ -12,11 +12,29 @@ Since v0.2 the plugin runs on Photon Beta (2.0): the Photon API at `api.photon.c
 
 ## Installation
 
+The plugin is `@photon-ai/openclaw` on npm:
+
+```bash
+openclaw plugins install @photon-ai/openclaw
+```
+
+OpenClaw asks two questions: whether to install a plugin that doesn't come from ClawHub, and whether to grant its capabilities (the Photon channel; no access to other conversations). Answer `y` to both. In a script, pass `--force --accept-capabilities` instead. To pin a version, add it: `@photon-ai/openclaw@0.2.3`.
+
+The same package is on ClawHub:
+
+```bash
+openclaw plugins install clawhub:@photon-ai/openclaw
+```
+
+OpenClaw trusts ClawHub as a source, so it only asks about capabilities (`--accept-capabilities` in a script), after showing ClawHub's security audit for the version.
+
+Or install from GitHub:
+
 ```bash
 openclaw plugins install git:github.com/photon-comm/openclaw-photon
 ```
 
-OpenClaw asks two questions: whether to install a plugin that doesn't come from ClawHub, and whether to grant its capabilities (the Photon channel; no access to other conversations). Answer `y` to both. In a script, pass `--force --accept-capabilities` instead. To pin a release, add its tag: `git:github.com/photon-comm/openclaw-photon@v0.2.1`.
+This asks the same two questions as npm. To pin a release, add its tag: `git:github.com/photon-comm/openclaw-photon@v0.2.3`.
 
 ## Setup
 
@@ -87,6 +105,8 @@ The gateway keeps its place in Photon's event stream, and the conversation it fo
 - `open`: anyone who texts the line reaches the agent. Requires `allowFrom: ["*"]`.
 - `disabled`: no inbound messages.
 
+The sender is checked before any attachment is fetched. Attachments from a sender who isn't let in stay on Photon: the gateway doesn't download or save them, and it doesn't add the sender to the conversations it keeps. Under `pairing`, that sender gets only the pairing code.
+
 ### Targets
 
 To send from the agent or the CLI, address a person by phone number or iMessage email, with or without the channel prefix:
@@ -134,8 +154,8 @@ OpenClaw installs plugins from git without running build scripts, so the compile
 The package is `@photon-ai/openclaw` on npm and on ClawHub.
 
 1. Raise `version` in `package.json`, add it to `CHANGELOG.md`, run `npm install --package-lock-only` and `npm run build`, and merge.
-2. Publish a GitHub release tagged `v` plus that version (for example `v0.2.2`). The **Release to npm** workflow publishes it to npm.
-3. Run **Release to ClawHub** with the same tag: `gh workflow run clawhub.yml -f tag=v0.2.2`.
+2. Publish a GitHub release tagged `v` plus that version (for example `v0.2.3`). The **Release to npm** workflow publishes it to npm.
+3. Run **Release to ClawHub** with the same tag: `gh workflow run clawhub.yml -f tag=v0.2.3`.
 
 Both workflows publish through trusted publishing, which npm and ClawHub only set up for a package that already exists. Until then, publish from a clean checkout of the tag by hand:
 

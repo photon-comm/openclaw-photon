@@ -4,15 +4,24 @@
 import { resolveLoggerBackedRuntime } from "openclaw/plugin-sdk/extension-shared";
 import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
-import { describePhotonError, photonApiOrigin } from "./api.js";
+import { describePhotonError, photonApiOrigin, type PhotonProjectApi } from "./api.js";
 import { clearActivePhotonClient, PhotonClient, setActivePhotonClient } from "./client.js";
 import { subscribePhotonEvents, type PhotonDeliveryMeta, type PhotonEvent } from "./events.js";
 import { handlePhotonInbound } from "./inbound.js";
-import { parsePhotonInbound, type PhotonInboundEvent } from "./message.js";
+import {
+  parsePhotonInbound,
+  type PhotonInboundAttachment,
+  type PhotonInboundEvent,
+} from "./message.js";
 import type { RuntimeEnv } from "./runtime-api.js";
 import { getPhotonRuntime } from "./runtime.js";
 import { CursorTracker, photonStateFile } from "./state.js";
-import { resolvePhotonAccount, type CoreConfig, type PhotonInboundMedia } from "./types.js";
+import {
+  resolvePhotonAccount,
+  type CoreConfig,
+  type PhotonInboundMedia,
+  type PhotonStagedAttachments,
+} from "./types.js";
 
 type PhotonMonitorOptions = {
   accountId?: string;
@@ -24,22 +33,26 @@ type PhotonMonitorOptions = {
 
 export const DEFAULT_MEDIA_MAX_MB = 20;
 
-async function stageAttachments(
-  client: PhotonClient,
-  inbound: PhotonInboundEvent,
+/**
+ * Download a message's attachments and save them where the agent can read
+ * them. Only `handlePhotonInbound` calls this, once the sender is let in.
+ */
+export async function stagePhotonAttachments(
+  api: Pick<PhotonProjectApi, "attachmentSize" | "downloadAttachment">,
+  attachments: PhotonInboundAttachment[],
   params: { maxBytes: number; log: (message: string) => void },
-): Promise<{ media: PhotonInboundMedia[]; placeholders: string[] }> {
+): Promise<PhotonStagedAttachments> {
   const media: PhotonInboundMedia[] = [];
   const placeholders: string[] = [];
-  for (const item of inbound.attachments) {
+  for (const item of attachments) {
     const label = item.kind === "voice" ? "voice note" : "attachment";
     try {
-      const size = await client.api.attachmentSize(item.attachmentId);
+      const size = await api.attachmentSize(item.attachmentId);
       if (typeof size === "number" && size > params.maxBytes) {
         placeholders.push(`[Photon ${label} received: too large to read (${size} bytes)]`);
         continue;
       }
-      const file = await client.api.downloadAttachment(item.attachmentId);
+      const file = await api.downloadAttachment(item.attachmentId);
       const saved = await saveMediaBuffer(
         file.buffer,
         file.contentType,
@@ -52,9 +65,6 @@ async function stageAttachments(
       params.log(`photon: could not read ${label} ${item.attachmentId}: ${describePhotonError(err)}`);
       placeholders.push(`[Photon ${label} received: ${item.attachmentId}]`);
     }
-  }
-  for (const type of inbound.unsupported) {
-    placeholders.push(`[Photon message of type ${type} received]`);
   }
   return { media, placeholders };
 }
@@ -112,33 +122,38 @@ export async function monitorPhotonProvider(
       );
       return;
     }
-    client.rememberConversation(inbound.handle, {
-      spaceId: inbound.spaceId,
-      agentUserId: inbound.agentUserId,
-      agentHandle: inbound.agentHandle,
-    });
-    const staged = await stageAttachments(client, inbound, {
-      maxBytes,
-      log: (message) => logger.error(`[${account.accountId}] ${message}`),
-    });
     core.channel.activity.record({
       channel: "photon",
       accountId: account.accountId,
       direction: "inbound",
     });
+    // Nothing is downloaded, saved or remembered here: handlePhotonInbound
+    // checks the sender first and calls these only for one it lets in.
     await handlePhotonInbound({
       message: {
         messageId: inbound.messageId,
         senderId: inbound.handle,
         text: inbound.text,
-        media: staged.media,
-        mediaPlaceholders: staged.placeholders,
+        attachments: inbound.attachments,
+        unsupported: inbound.unsupported,
         timestamp: inbound.timestamp,
       },
       account,
       config: cfg,
       runtime,
       statusSink: opts.statusSink,
+      stageAttachments: async (attachments) =>
+        await stagePhotonAttachments(client.api, attachments, {
+          maxBytes,
+          log: (message) => logger.error(`[${account.accountId}] ${message}`),
+        }),
+      rememberConversation: () => {
+        client.rememberConversation(inbound.handle, {
+          spaceId: inbound.spaceId,
+          agentUserId: inbound.agentUserId,
+          agentHandle: inbound.agentHandle,
+        });
+      },
     });
   };
 

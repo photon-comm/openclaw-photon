@@ -17,6 +17,7 @@ import type {
 } from "openclaw/plugin-sdk/config-contracts";
 import { normalizeSecretInputString, type SecretInput } from "openclaw/plugin-sdk/secret-input";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
+import type { PhotonInboundAttachment } from "./message.js";
 
 export type PhotonAccountConfig = {
   name?: string;
@@ -79,10 +80,21 @@ export type PhotonInboundMessage = {
   /** Sender handle: E.164 phone or iMessage email. Replies go back to it. */
   senderId: string;
   text: string;
-  media: PhotonInboundMedia[];
-  /** Text markers for media that could not be staged (oversize/read failure). */
-  mediaPlaceholders: string[];
+  /**
+   * Attachments as the event lists them. They are downloaded only once the
+   * sender is let in, through `stageAttachments`.
+   */
+  attachments: PhotonInboundAttachment[];
+  /** Content types this plugin can't pass on, for a text marker. */
+  unsupported: string[];
   timestamp: number;
+};
+
+/** Attachments saved for the agent, and markers for the ones that couldn't be. */
+export type PhotonStagedAttachments = {
+  media: PhotonInboundMedia[];
+  /** Text markers for attachments that could not be staged (oversize/read failure). */
+  placeholders: string[];
 };
 
 function getPhotonConfig(cfg: OpenClawConfig): PhotonAccountConfig | undefined {

@@ -20,7 +20,13 @@ import { getActivePhotonClient } from "./client.js";
 import { normalizePhotonAllowEntry, normalizePhotonSenderId } from "./normalize.js";
 import { getPhotonRuntime } from "./runtime.js";
 import { sendMessagePhoton } from "./send.js";
-import type { CoreConfig, PhotonInboundMessage, ResolvedPhotonAccount } from "./types.js";
+import type { PhotonInboundAttachment } from "./message.js";
+import type {
+  CoreConfig,
+  PhotonInboundMessage,
+  PhotonStagedAttachments,
+  ResolvedPhotonAccount,
+} from "./types.js";
 
 const CHANNEL_ID = "photon" as const;
 
@@ -74,12 +80,34 @@ async function deliverPhotonReply(params: {
   params.statusSink?.({ lastOutboundAt: Date.now() });
 }
 
+function joinBody(parts: string[]): string {
+  return parts.filter(Boolean).join("\n").trim();
+}
+
+/**
+ * Handle one inbound DM. Who may reach the agent (dmPolicy, allowFrom and
+ * approved pairings) is decided first, from what the event itself says. A
+ * sender who isn't let in costs no download, no saved file and no remembered
+ * conversation: the gateway only reads the event and maybe sends a pairing
+ * code.
+ */
 export async function handlePhotonInbound(params: {
   message: PhotonInboundMessage;
   account: ResolvedPhotonAccount;
   config: CoreConfig;
   runtime: RuntimeEnv;
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
+  /**
+   * Downloads and saves the message's attachments. Called only for a sender
+   * who is let in, and only when the message has attachments.
+   */
+  stageAttachments: (attachments: PhotonInboundAttachment[]) => Promise<PhotonStagedAttachments>;
+  /**
+   * Remembers the DM the message arrived in, so replies go back the same way
+   * without a lookup. Called only before something is sent to the sender: a
+   * pairing code or the agent's turn.
+   */
+  rememberConversation?: () => void;
   deps?: PhotonInboundDeps;
 }): Promise<void> {
   const { message, account, config, runtime, statusSink } = params;
@@ -91,11 +119,11 @@ export async function handlePhotonInbound(params: {
     accountId: account.accountId,
   });
 
-  const rawBody = [message.text.trim(), ...message.mediaPlaceholders]
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-  if (!rawBody && message.media.length === 0) {
+  const text = message.text.trim();
+  const unsupportedMarkers = message.unsupported.map(
+    (type) => `[Photon message of type ${type} received]`,
+  );
+  if (!text && unsupportedMarkers.length === 0 && message.attachments.length === 0) {
     return;
   }
 
@@ -107,7 +135,12 @@ export async function handlePhotonInbound(params: {
     cfg: config as OpenClawConfig,
     surface: CHANNEL_ID,
   });
-  const hasControlCommand = core.channel.text.hasControlCommand(rawBody, config as OpenClawConfig);
+  // Commands are read from what the sender wrote, before any attachment is
+  // fetched; markers for attachments that fail to download come later.
+  const hasControlCommand = core.channel.text.hasControlCommand(
+    joinBody([text, ...unsupportedMarkers]),
+    config as OpenClawConfig,
+  );
 
   const access = await createChannelIngressResolver({
     channelId: CHANNEL_ID,
@@ -137,9 +170,11 @@ export async function handlePhotonInbound(params: {
     await pairing.issueChallenge({
       senderId,
       senderIdLine: `Your Photon sender id: ${senderId}`,
-      sendPairingReply: async (text) => {
+      // Runs only when a new pairing code goes out, not for every message.
+      sendPairingReply: async (replyText) => {
+        params.rememberConversation?.();
         await deliverPhotonReply({
-          payload: { text },
+          payload: { text: replyText },
           cfg: config,
           target: replyTarget,
           accountId: account.accountId,
@@ -158,6 +193,14 @@ export async function handlePhotonInbound(params: {
     runtime.log?.(`photon: drop DM sender ${senderId} (dmPolicy=${dmPolicy})`);
     return;
   }
+
+  // The sender is let in: from here on the message gets the agent's turn.
+  params.rememberConversation?.();
+  const staged: PhotonStagedAttachments =
+    message.attachments.length > 0
+      ? await params.stageAttachments(message.attachments)
+      : { media: [], placeholders: [] };
+  const rawBody = joinBody([text, ...staged.placeholders, ...unsupportedMarkers]);
 
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config as OpenClawConfig,
@@ -214,7 +257,7 @@ export async function handlePhotonInbound(params: {
         : undefined,
     },
     media: toInboundMediaFacts(
-      message.media.map((item) => ({
+      staged.media.map((item) => ({
         path: item.path,
         url: item.path,
         contentType: item.contentType,

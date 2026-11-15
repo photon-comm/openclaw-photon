@@ -45,6 +45,16 @@ async function deliverPhotonReply(params) {
     }
     params.statusSink?.({ lastOutboundAt: Date.now() });
 }
+function joinBody(parts) {
+    return parts.filter(Boolean).join("\n").trim();
+}
+/**
+ * Handle one inbound DM. Who may reach the agent (dmPolicy, allowFrom and
+ * approved pairings) is decided first, from what the event itself says. A
+ * sender who isn't let in costs no download, no saved file and no remembered
+ * conversation: the gateway only reads the event and maybe sends a pairing
+ * code.
+ */
 export async function handlePhotonInbound(params) {
     const { message, account, config, runtime, statusSink } = params;
     const sendMessage = params.deps?.sendMessage ?? sendMessagePhoton;
@@ -54,11 +64,9 @@ export async function handlePhotonInbound(params) {
         channel: CHANNEL_ID,
         accountId: account.accountId,
     });
-    const rawBody = [message.text.trim(), ...message.mediaPlaceholders]
-        .filter(Boolean)
-        .join("\n")
-        .trim();
-    if (!rawBody && message.media.length === 0) {
+    const text = message.text.trim();
+    const unsupportedMarkers = message.unsupported.map((type) => `[Photon message of type ${type} received]`);
+    if (!text && unsupportedMarkers.length === 0 && message.attachments.length === 0) {
         return;
     }
     statusSink?.({ lastInboundAt: message.timestamp });
@@ -68,7 +76,9 @@ export async function handlePhotonInbound(params) {
         cfg: config,
         surface: CHANNEL_ID,
     });
-    const hasControlCommand = core.channel.text.hasControlCommand(rawBody, config);
+    // Commands are read from what the sender wrote, before any attachment is
+    // fetched; markers for attachments that fail to download come later.
+    const hasControlCommand = core.channel.text.hasControlCommand(joinBody([text, ...unsupportedMarkers]), config);
     const access = await createChannelIngressResolver({
         channelId: CHANNEL_ID,
         accountId: account.accountId,
@@ -95,9 +105,11 @@ export async function handlePhotonInbound(params) {
         await pairing.issueChallenge({
             senderId,
             senderIdLine: `Your Photon sender id: ${senderId}`,
-            sendPairingReply: async (text) => {
+            // Runs only when a new pairing code goes out, not for every message.
+            sendPairingReply: async (replyText) => {
+                params.rememberConversation?.();
                 await deliverPhotonReply({
-                    payload: { text },
+                    payload: { text: replyText },
                     cfg: config,
                     target: replyTarget,
                     accountId: account.accountId,
@@ -116,6 +128,12 @@ export async function handlePhotonInbound(params) {
         runtime.log?.(`photon: drop DM sender ${senderId} (dmPolicy=${dmPolicy})`);
         return;
     }
+    // The sender is let in: from here on the message gets the agent's turn.
+    params.rememberConversation?.();
+    const staged = message.attachments.length > 0
+        ? await params.stageAttachments(message.attachments)
+        : { media: [], placeholders: [] };
+    const rawBody = joinBody([text, ...staged.placeholders, ...unsupportedMarkers]);
     const route = core.channel.routing.resolveAgentRoute({
         cfg: config,
         channel: CHANNEL_ID,
@@ -169,7 +187,7 @@ export async function handlePhotonInbound(params) {
                 ? { authorized: access.commandAccess.authorized }
                 : undefined,
         },
-        media: toInboundMediaFacts(message.media.map((item) => ({
+        media: toInboundMediaFacts(staged.media.map((item) => ({
             path: item.path,
             url: item.path,
             contentType: item.contentType,
