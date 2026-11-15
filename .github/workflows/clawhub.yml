@@ -1,11 +1,15 @@
 name: Release to ClawHub
 
-# Publishes a release to ClawHub as @photon-ai/openclaw. Run it by hand
-# with the tag after the npm release.
+# Publishes a release to ClawHub as @photon-ai/openclaw. Run it by hand on
+# the release tag after the npm release:
+#
+#   gh workflow run clawhub.yml --ref v0.2.3 -f tag=v0.2.3
 #
 # ClawHub trusts this workflow file for the package (trusted publishing), so it
 # needs no token. ClawHub only accepts trusted publishing on manual runs, which
-# is why this one isn't triggered by the GitHub Release. Trusted publishing
+# is why this one isn't triggered by the GitHub Release, and only when the
+# run's ref is the source ref it publishes: a run started on main is refused
+# ("Trusted publish source ref must match the authorized source ref"). Trusted publishing
 # keeps the owner the package already has on ClawHub and refuses an owner
 # override, so none is passed here: the first version is published by hand as
 # the photon-ai publisher (a package's scope must match its ClawHub owner), and
@@ -47,10 +51,16 @@ jobs:
         id: tag
         env:
           TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry-run }}
         run: |
           version=$(node -p "require('./package.json').version")
           if [ "$TAG" != "v$version" ]; then
             echo "::error::Tag $TAG does not match package.json version $version."
+            exit 1
+          fi
+          # Fail here, not at the publish step, when the run isn't on the tag.
+          if [ "$DRY_RUN" != "true" ] && [ "$GITHUB_REF" != "refs/tags/$TAG" ]; then
+            echo "::error::Run this on the tag: gh workflow run clawhub.yml --ref $TAG -f tag=$TAG. ClawHub refuses a trusted publish from $GITHUB_REF."
             exit 1
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -85,3 +95,35 @@ jobs:
       source_ref: refs/tags/${{ inputs.tag }}
       tags: ${{ needs.pack.outputs.dist-tag }}
       dry_run: ${{ inputs.dry-run }}
+      # The CLI's wait can't work with trusted publishing: ClawHub revokes the
+      # run's publish token once it accepts the release as pending, and the
+      # CLI's retry can't mint a second one for the same run, which it reports
+      # as "Not logged in to this registry" (v0.2.3). The next job checks
+      # publication instead.
+      wait_for_publication: false
+
+  published:
+    needs: publish
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # ClawHub publishes the version once its checks finish, which can take
+      # many minutes; this only reads the public listing.
+      - name: Version is on ClawHub
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          version="${TAG#v}"
+          for attempt in $(seq 1 80); do
+            if npx --yes clawhub@0.25.1 package inspect @photon-ai/openclaw --version "$version" --json >/dev/null 2>&1; then
+              echo "@photon-ai/openclaw@$version is on ClawHub."
+              exit 0
+            fi
+            echo "Attempt $attempt/80: $version isn't listed yet."
+            sleep 30
+          done
+          echo "::error::@photon-ai/openclaw@$version isn't on ClawHub after 40 minutes. Check its publication on clawhub.ai."
+          exit 1

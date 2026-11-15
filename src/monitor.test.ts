@@ -127,10 +127,15 @@ function savedState(): { seen?: string[]; conversations?: Record<string, { space
 async function deliver(event: ReturnType<typeof received>) {
   seq += 1;
   events.onEvent?.(event, { seq });
-  await vi.waitFor(() => expect(savedState().seen ?? []).toContain(event.data.object.id));
+  // The first agent turn loads OpenClaw's session store, which can take a
+  // few seconds on a cold CI runner.
+  await vi.waitFor(() => expect(savedState().seen ?? []).toContain(event.data.object.id), {
+    timeout: 20_000,
+    interval: 20,
+  });
 }
 
-describe("monitorPhotonProvider: attachments wait for the sender check", () => {
+describe("monitorPhotonProvider: attachments wait for the sender check", { timeout: 30_000 }, () => {
   let api: {
     attachmentSize: ReturnType<typeof vi.fn>;
     downloadAttachment: ReturnType<typeof vi.fn>;
