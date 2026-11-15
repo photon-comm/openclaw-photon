@@ -227,6 +227,21 @@ describe("monitorPhotonProvider: attachments wait for the sender check", () => {
     );
   });
 
+  it("an allowed sender: a download that fails becomes a marker, and the turn still runs", async () => {
+    const { dispatchReply } = fakeRuntime();
+    api.downloadAttachment.mockRejectedValue(new Error("connection reset"));
+    await start(config({ dmPolicy: "allowlist", allowFrom: [OWNER] }));
+
+    await deliver(received({ id: "pho_msg_6", from: OWNER, text: "look", attachments: ["pho_att_7"] }));
+
+    expect(api.downloadAttachment).toHaveBeenCalledWith("pho_att_7");
+    expect(saveMediaBuffer).not.toHaveBeenCalled();
+    expect(dispatchReply).toHaveBeenCalledTimes(1);
+    const ctx = dispatchReply.mock.calls[0]?.[0].ctxPayload ?? {};
+    expect(ctx.RawBody).toBe("look\n[Photon attachment received: pho_att_7]");
+    expect(ctx.media).toEqual([]);
+  });
+
   it("a group message: dropped before anything is fetched, even from an allowed sender", async () => {
     const { dispatchReply } = fakeRuntime();
     await start(config({ dmPolicy: "allowlist", allowFrom: [OWNER] }));
@@ -253,6 +268,8 @@ describe("monitorPhotonProvider: attachments wait for the sender check", () => {
       agentHandle: "+15550000001",
     });
     expect(String(api.sendText.mock.calls[0]?.[1])).toContain("PAIR1234");
+    // Saved because the code went out; a sender who gets nothing isn't saved.
+    expect(savedState().conversations?.[STRANGER]).toMatchObject({ spaceId: `pho_spc_${STRANGER}` });
     expect(api.attachmentSize).not.toHaveBeenCalled();
     expect(api.downloadAttachment).not.toHaveBeenCalled();
     expect(saveMediaBuffer).not.toHaveBeenCalled();

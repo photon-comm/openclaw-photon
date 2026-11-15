@@ -229,7 +229,11 @@ describe("handlePhotonInbound: a sender who is let in gets the same turn as befo
     expect(result.stageAttachments).toHaveBeenCalledWith(ATTACHMENTS);
     expect(result.rememberConversation).toHaveBeenCalledTimes(1);
     expect(dispatchReply).toHaveBeenCalledTimes(1);
-    // The agent's turn starts only once the attachments are saved.
+    // The conversation is known and the attachments are saved before the
+    // agent's turn starts (read receipt, typing and replies use them).
+    expect(result.rememberConversation.mock.invocationCallOrder[0]).toBeLessThan(
+      dispatchReply.mock.invocationCallOrder[0] ?? 0,
+    );
     expect(result.stageAttachments.mock.invocationCallOrder[0]).toBeLessThan(
       dispatchReply.mock.invocationCallOrder[0] ?? 0,
     );
