@@ -209,7 +209,9 @@ describe("handlePhotonInbound: a sender who isn't let in costs nothing", () => {
   });
 });
 
-describe("handlePhotonInbound: a sender who is let in gets the same turn as before", () => {
+// The first dispatch loads OpenClaw's session store, which can take a few
+// seconds on a cold CI runner.
+describe("handlePhotonInbound: a sender who is let in gets the same turn as before", { timeout: 30_000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
